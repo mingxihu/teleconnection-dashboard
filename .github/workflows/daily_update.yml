@@ -1,11 +1,10 @@
-name: Daily Climate, HDD & Storage Update
+name: Daily Climate & HDD & Storage Update
 
 on:
   schedule:
-    # 修改时间为: 每天 UTC 15:45 (美东 10:45 AM / 11:45 AM)
-    # 确保在 EIA (10:30 AM ET) 发布之后运行
+    # 每天 UTC 15:45 (美东 10:45 AM)
     - cron: '45 15 * * *'
-  workflow_dispatch: # 允许手动运行
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -27,29 +26,27 @@ jobs:
         run: |
           pip install pandas requests
 
-      # === 任务 1: 气象数据 (AO/NAO/PNA) ===
+      # === 任务 1: 气象数据 ===
       - name: Run Climate Collector
         run: python climate_collector.py
 
-      # === 任务 2: 需求数据 (HDD) ===
+      # === 任务 2: HDD 数据 ===
       - name: Run HDD Collector
         run: python hdd_collector.py
 
-      # === 任务 3: 库存数据 (EIA) ===
-      # 这是您刚加的新功能
+      # === 任务 3: 库存数据 (就是这里！之前可能没保存上) ===
       - name: Run Storage Collector
         run: python storage_collector.py
 
-      # === 任务 4: 提交所有数据 ===
+      # === 任务 4: 提交保存 ===
       - name: Commit and Push changes
         run: |
           git config --global user.name "GitHub Actions Bot"
           git config --global user.email "actions@github.com"
           
-          # 添加所有以 history_ 开头的 CSV (包括 storage)
+          # 确保添加所有 history 开头的 CSV
           git add history_*.csv
           
-          # 只有当有数据更新时才提交
           git commit -m "Auto-update: Climate, HDD & Storage Data" || echo "No changes to commit"
           
           git push
