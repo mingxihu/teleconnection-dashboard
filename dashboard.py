@@ -6,6 +6,7 @@ import re
 from pypdf import PdfReader
 import pandas as pd
 import json
+import os
 from streamlit_autorefresh import st_autorefresh
 
 # === 1. 页面全局配置 ===
@@ -16,7 +17,7 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# === [配置] 自动刷新 (5分钟) ===
+# === [配置] 自动刷新 (1小时) ===
 st_autorefresh(interval=3600000, key="data_refresh_key")
 
 # === 2. 样式优化 (CSS) ===
@@ -40,20 +41,33 @@ st.markdown("""
         background-color: #e3f2fd; border-left: 4px solid #1565c0; color: #1565c0;
     }
 
-    /* [修改] 标签样式：字体变大，内边距增加 */
+    /* [核心颜色统一] Bullish (Negative/Cold) = Green; Bearish (Positive/Warm) = Red */
     .tag-minus {
-        background-color: #ffebee; color: #c62828; 
-        padding: 4px 12px; border-radius: 6px; font-weight: 700; font-size: 1.1em; /* 变大 */
-        border: 1px solid #ffcdd2; display: inline-block; margin: 4px 0;
-    }
-    .tag-plus {
-        background-color: #e8f5e9; color: #2e7d32; 
-        padding: 4px 12px; border-radius: 6px; font-weight: 700; font-size: 1.1em; /* 变大 */
+        background-color: #e8f5e9; color: #2e7d32; /* 绿色: 负相位/寒冷/利多 */
+        padding: 4px 12px; border-radius: 6px; font-weight: 700; font-size: 1.1em; 
         border: 1px solid #c8e6c9; display: inline-block; margin: 4px 0;
     }
+    .tag-plus {
+        background-color: #e8f5e9; color: #2e7d32; /* [FIXED] 绿色: 正相位/PNA/利多 */
+        padding: 4px 12px; border-radius: 6px; font-weight: 700; font-size: 1.1em;
+        border: 1px solid #c8e6c9; display: inline-block; margin: 4px 0;
+    }
+    
+        .tag-bear {
+        background-color: #ffebee; 
+        color: #c62828;               /* 红色：暖冬/利空 */
+        padding: 4px 12px; 
+        border-radius: 6px; 
+        font-weight: 700; 
+        font-size: 1.1em;
+        border: 1px solid #ffcdd2; 
+        display: inline-block; 
+        margin: 4px 0;
+    }
+
     .tag-neutral {
         background-color: #f5f5f5; color: #616161; 
-        padding: 4px 12px; border-radius: 6px; font-weight: 700; font-size: 1.1em; /* 变大 */
+        padding: 4px 12px; border-radius: 6px; font-weight: 700; font-size: 1.1em;
         border: 1px solid #e0e0e0; display: inline-block; margin: 4px 0;
     }
 
@@ -102,7 +116,8 @@ LINKS = {
 }
 
 
-# === 辅助函数 ===
+# === 辅助函数定义 (必须在调用前) ===
+
 def clickable_image_html(img_url, alt_text):
     html_code = f'''
     <a href="{img_url}" target="_blank">
@@ -128,6 +143,86 @@ def signal_card(title, dynamics, impact, signal_text):
 </div>
 """
     st.markdown(html, unsafe_allow_html=True)
+
+
+# === [新增] 提取本地历史数据最新行 (供 NCRI 和 Tab 展示使用) ===
+def load_latest_climate_data():
+    """从本地 CSV 文件读取最新一行的 AO/NAO/PNA 数据。"""
+    HISTORY_FILE = "history_weather.csv"
+    try:
+        if not os.path.exists(HISTORY_FILE):
+            return None
+
+        df = pd.read_csv(HISTORY_FILE)
+
+        # 返回 DataFrame 的最后一行（即最新的数据）
+        return df.iloc[-1].to_dict()
+
+    except Exception as e:
+        return None
+
+
+# === [新增/修正] 辅助函数 - 显示当前气象指标的值 (供 Tab 使用) ===
+def display_current_index_value(index_name):
+    global latest_data
+
+    if latest_data:
+        # 获取 CSV 中的值
+        obs_val = latest_data.get(f'{index_name}_Obs')
+        d7_val = latest_data.get(f'{index_name}_Day7')
+        d10_val = latest_data.get(f'{index_name}_Day10')
+
+        # === 核心颜色逻辑：根据指标确定 Bullish/Bearish (Green/Red) ===
+        is_nao_ao = index_name in ["NAO", "AO"]
+
+        def get_style(value):
+            if value is None: return "color: #888;", "-"
+
+            is_positive = value > 0
+
+            # AO/NAO: 负值是利多 (Green)
+            if is_nao_ao:
+                is_bullish = not is_positive
+                # PNA: 正值是利多 (Green)
+            else:
+                is_bullish = is_positive
+
+            color = "#2e7d32" if is_bullish else "#c62828"  # Green or Red
+            arrow = "▲" if is_bullish else "▼"
+
+            return f"color: {color};", arrow
+
+        obs_style, obs_arrow = get_style(obs_val)
+        d7_style, d7_arrow = get_style(d7_val)
+        d10_style, d10_arrow = get_style(d10_val)
+
+
+        col1, col2, col3 = st.columns(3)
+
+        # 1. 今日观测
+        with col1:
+            st.markdown(f"**今日实况 (Observed):**")
+            # [修正] 确保箭头在 span 内，统一颜色
+            st.markdown(
+                f"<span style='font-size: 1.8em; font-weight: bold; {obs_style}'>{obs_arrow} {obs_val:.3f}</span>",
+                unsafe_allow_html=True)
+
+        # 2. 7天预测
+        with col2:
+            st.markdown(f"**7天预测 (Forecast Day 7):**")
+            st.markdown(f"<span style='font-size: 1.8em; font-weight: bold; {d7_style}'>{d7_arrow} {d7_val:.3f}</span>",
+                        unsafe_allow_html=True)
+
+        # 3. 10天预测
+        with col3:
+            st.markdown(f"**10天预测 (Forecast Day 10):**")
+            st.markdown(
+                f"<span style='font-size: 1.8em; font-weight: bold; {d10_style}'>{d10_arrow} {d10_val:.3f}</span>",
+                unsafe_allow_html=True)
+
+        st.markdown("---")
+    else:
+        st.warning("⚠️ 数据库尚未更新，请运行 'climate_collector.py' 获取数据。")
 
 
 # === HDD 数据抓取函数 (NOAA) ===
@@ -294,7 +389,9 @@ with st.sidebar:
         show_dual_metric(hd_col2, "Mid-Atlantic", hdd_data.get('Middle Atlantic', {}))
         show_dual_metric(hd_col1, "Midwest", hdd_data.get('Midwest', {}))
         show_dual_metric(hd_col2, "US Total", hdd_data.get('US Total', {}))
+
         st.caption("[NOAA HDD Data](https://www.cpc.ncep.noaa.gov/products/analysis_monitoring/cdus/degree_days/)")
+
     else:
         st.warning("HDD 数据暂不可用")
 
@@ -318,21 +415,22 @@ with st.sidebar:
             highlight_rows = ["Net change (Bcf)", "Year-ago % change", "5-yr % change"]
 
 
-            # [修改] 强制所有单元格字体加粗
             def highlight_style(df):
-                # 默认所有单元格加上 font-weight: bold
                 styles = pd.DataFrame('font-weight: bold;', index=df.index, columns=df.columns)
-
                 for idx in df.index:
                     if idx in highlight_rows:
                         for col in df.columns:
                             val = df.loc[idx, col]
-                            # 在 font-weight: bold 基础上追加背景色和颜色
                             base = 'font-weight: bold; background-color: #fff3cd;'
-                            if val < 0:
-                                styles.loc[idx, col] = base + 'color: #c62828;'
-                            elif val > 0:
-                                styles.loc[idx, col] = base + 'color: #2e7d32;'
+                            # 下降（负值）= 库存减少 = 利多 = 绿色
+                            # 上升（正值）= 库存增加 = 利空 = 红色
+                            if pd.notna(val):
+                                if val < 0:
+                                    styles.loc[idx, col] = base + 'color: #2e7d32;'
+                                elif val > 0:
+                                    styles.loc[idx, col] = base + 'color: #c62828;'
+                                else:
+                                    styles.loc[idx, col] = base + 'color: black;'
                             else:
                                 styles.loc[idx, col] = base + 'color: black;'
                 return styles
@@ -370,6 +468,75 @@ st.caption(
     f"**数据更新 (Last Updated):** `{datetime.now().astimezone().strftime('%Y-%m-%d %H:%M %Z')}`")
 st.markdown("---")
 
+# [新增] 辅助函数调用：在主界面头部调用一次，供 Tabs 读取 CSV
+latest_data = load_latest_climate_data()
+
+
+# [新增] 辅助函数 - 显示当前气象指标的值
+def display_current_index_value(index_name):
+    if latest_data:
+        # 获取 CSV 中的值
+        obs_val = latest_data.get(f'{index_name}_Obs')
+        d7_val = latest_data.get(f'{index_name}_Day7')
+        d10_val = latest_data.get(f'{index_name}_Day10')
+
+        # === 核心颜色逻辑：根据指标确定 Bullish/Bearish (Green/Red) ===
+        is_nao_ao = index_name in ["NAO", "AO"]
+
+        def get_style(value):
+            if value is None: return "color: #888;", "-"
+
+            is_positive = value > 0
+
+            # AO/NAO: 负值是利多 (Green)
+            if is_nao_ao:
+                is_bullish = not is_positive
+                # PNA: 正值是利多 (Green)
+            else:
+                is_bullish = is_positive
+
+            color = "#2e7d32" if is_bullish else "#c62828"  # Green or Red
+            arrow = "▲" if is_bullish else "▼"
+
+            return f"color: {color};", arrow
+
+        obs_style, obs_arrow = get_style(obs_val)
+        d7_style, d7_arrow = get_style(d7_val)
+        d10_style, d10_arrow = get_style(d10_val)
+
+
+        # [修改] 布局从 st.markdown 迁移到自定义 HTML 卡片
+        html_card = f"""
+        <div style='
+            margin-top: 15px; 
+            border: 1px solid #e0e0e0; 
+            border-radius: 6px; 
+            padding: 8px; 
+            background-color: #f8f8f8;
+            display: flex; 
+            justify-content: space-around;
+            text-align: center;
+            font-size: 0.95em;
+        '>
+            <div style='flex:1; border-right: 1px solid #eee;'>
+                <span style='font-weight: bold; color: #555;'>OBSERVED (Today)</span><br>
+                <span style='font-size: 1.3em; {obs_style}; font-weight: bold;'>{obs_val:.3f}</span>
+            </div>
+            <div style='flex:1; border-right: 1px solid #eee;'>
+                <span style='font-weight: bold; color: #555;'>DAY 7 FORECAST</span><br>
+                <span style='font-size: 1.3em; {d7_style}; font-weight: bold;'>{d7_val:.3f}</span>
+            </div>
+            <div style='flex:1;'>
+                <span style='font-weight: bold; color: #555;'>DAY 10 FORECAST</span><br>
+                <span style='font-size: 1.3em; {d10_style}; font-weight: bold;'>{d10_val:.3f}</span>
+            </div>
+        </div>
+        """
+        st.markdown(html_card, unsafe_allow_html=True)
+    else:
+        st.warning("⚠️ 数据库尚未更新，请运行 'climate_collector.py' 获取数据。")
+
+
 # === 6. 核心气象板块 (4 Tabs) ===
 st.subheader("📡 大气遥相关机制 (Atmospheric Teleconnections)")
 st.caption("注：图表展示 GEFS 集合预报发散度。红线 (Mean) 代表主流趋势。")
@@ -379,28 +546,37 @@ tab_nao, tab_ao, tab_pna, tab_enso = st.tabs([
 ])
 
 with tab_nao:
-    c1, c2 = st.columns([1, 1.5])
-    with c1: clickable_image_html(IMG_URLS["NAO"], "NAO")
-    with c2:
+    col_img, col_content = st.columns([1, 1.5])
+    with col_img: clickable_image_html(IMG_URLS["NAO"], "NAO")
+    with col_content:
         st.markdown("<div class='tag-minus'>📉 负相位 / Negative (-)</div>", unsafe_allow_html=True)
         signal_card("阻塞效应 (Blocking)", "西风急流弯曲，格陵兰高压形成。", "冷气团在美东<b>停滞不前</b>。",
                     "极强利多 (寒潮持续)")
 
+        # [NEW] NAO 数据卡片 - 放置在信号卡片下方
+        display_current_index_value("NAO")
+
 with tab_ao:
-    c1, c2 = st.columns([1, 1.5])
-    with c1: clickable_image_html(IMG_URLS["AO"], "AO")
-    with c2:
+    col_img, col_content = st.columns([1, 1.5])
+    with col_img: clickable_image_html(IMG_URLS["AO"], "AO")
+    with col_content:
         st.markdown("<div class='tag-minus'>📉 负相位 / Negative (-)</div>", unsafe_allow_html=True)
         signal_card("极涡崩溃 (Vortex Collapse)", "极地高压控制，冷空气南下。", "广泛的<b>冷空气爆发</b>。",
                     "利多 (冷源充足)")
 
+        # [NEW] AO 数据卡片 - 放置在信号卡片下方
+        display_current_index_value("AO")
+
 with tab_pna:
-    c1, c2 = st.columns([1, 1.5])
-    with c1: clickable_image_html(IMG_URLS["PNA"], "PNA")
-    with c2:
+    col_img, col_content = st.columns([1, 1.5])
+    with col_img: clickable_image_html(IMG_URLS["PNA"], "PNA")
+    with col_content:
         st.markdown("<div class='tag-plus'>📈 正相位 / Positive (+)</div>", unsafe_allow_html=True)
         signal_card("西脊东槽 (Ridge-Trough)", "北美西部高压脊隆起。", "建立<b>经向环流</b>输送冷空气。",
                     "利多 (通道打开)")
+
+        # [NEW] PNA 数据卡片 - 放置在信号卡片下方
+        display_current_index_value("PNA")
 
 with tab_enso:
     with st.spinner("正在解析 NOAA 最新周报..."):
@@ -417,7 +593,7 @@ st.subheader("🎯 宏观交易决策矩阵 (Decision Matrix)")
 m1, m2, m3 = st.columns(3)
 
 with m1:
-    st.error("🔥 **极寒模式 (Strong Buy)**")
+    st.success("🔥 **极寒模式 (Strong Buy)**")  # 颜色对调：利多 (Buy) = 绿色 (Success)
     st.markdown("""<div class='decision-content'>
     <span class='decision-label'>信号组合:</span>
     <span class='tag-minus'>NAO (-)</span> + <span class='tag-minus'>AO (-)</span> + <span class='tag-plus'>PNA (+)</span>
@@ -428,10 +604,10 @@ with m1:
 </div>""", unsafe_allow_html=True)
 
 with m2:
-    st.success("🟢 **暖冬模式 (Strong Sell)**")
+    st.error("🟢 **暖冬模式 (Strong Sell)**")  # 颜色对调：利空 (Sell) = 红色 (Error)
     st.markdown("""<div class='decision-content'>
     <span class='decision-label'>信号组合:</span>
-    <span class='tag-plus'>NAO (+)</span> + <span class='tag-plus'>AO (+)</span> + <span class='tag-minus'>PNA (-)</span>
+    <span class='tag-bear'>NAO (+)</span> + <span class='tag-bear'>AO (+)</span> + <span class='tag-bear'>PNA (-)</span>
     <span class='decision-label'>☀️ 天气后果:</span>
     强劲西风急流 + 东南高压脊。暖湿气流主导美东，不下雪只下雨。
     <span class='decision-label'>💰 操作建议:</span>
