@@ -53,7 +53,7 @@ st.markdown("""
         border: 1px solid #c8e6c9; display: inline-block; margin: 4px 0;
     }
 
-        .tag-bear {
+    .tag-bear {
         background-color: #ffebee; 
         color: #c62828;               /* 红色：暖冬/利空 */
         padding: 4px 12px; 
@@ -145,7 +145,7 @@ def signal_card(title, dynamics, impact, signal_text):
     st.markdown(html, unsafe_allow_html=True)
 
 
-# === [保留] 提取本地历史数据最新行 (供 NCRI 和 Tab 展示使用) ===
+# === 提取本地历史数据最新行 (供 NCRI 和 Tab 展示使用) ===
 def load_latest_climate_data():
     """从本地 CSV 文件读取最新一行的 AO/NAO/PNA 数据。"""
     HISTORY_FILE = "history_weather.csv"
@@ -153,32 +153,27 @@ def load_latest_climate_data():
         if not os.path.exists(HISTORY_FILE):
             return None
         df = pd.read_csv(HISTORY_FILE)
-        # 返回 DataFrame 的最后一行（即最新的数据）
         return df.iloc[-1].to_dict()
     except Exception as e:
         return None
 
 
-# === [保留] 辅助函数 - 显示当前气象指标的值 (供 Tab 使用) ===
+# === 辅助函数 - 显示当前气象指标的值 (供 Tab 使用) ===
 def display_current_index_value(index_name):
     global latest_data
 
     if latest_data:
-        # 获取 CSV 中的值
         obs_val = latest_data.get(f'{index_name}_Obs')
         d7_val = latest_data.get(f'{index_name}_Day7')
         d10_val = latest_data.get(f'{index_name}_Day10')
 
-        # === 核心颜色逻辑：根据指标确定 Bullish/Bearish (Green/Red) ===
         is_nao_ao = index_name in ["NAO", "AO"]
 
         def get_style(value):
             if value is None: return "color: #888;", "-"
             is_positive = value > 0
-            # AO/NAO: 负值是利多 (Green)
             if is_nao_ao:
                 is_bullish = not is_positive
-            # PNA: 正值是利多 (Green)
             else:
                 is_bullish = is_positive
             color = "#2e7d32" if is_bullish else "#c62828"  # Green or Red
@@ -191,45 +186,38 @@ def display_current_index_value(index_name):
 
         col1, col2, col3 = st.columns(3)
 
-        # 1. 今日观测
         with col1:
             st.markdown(f"**今日实况 (Observed):**")
             st.markdown(
                 f"<span style='font-size: 1.8em; font-weight: bold; {obs_style}'>{obs_arrow} {obs_val:.3f}</span>",
                 unsafe_allow_html=True)
-
-        # 2. 7天预测
         with col2:
             st.markdown(f"**7天预测 (Forecast Day 7):**")
             st.markdown(f"<span style='font-size: 1.8em; font-weight: bold; {d7_style}'>{d7_arrow} {d7_val:.3f}</span>",
                         unsafe_allow_html=True)
-
-        # 3. 10天预测
         with col3:
             st.markdown(f"**10天预测 (Forecast Day 10):**")
             st.markdown(
                 f"<span style='font-size: 1.8em; font-weight: bold; {d10_style}'>{d10_arrow} {d10_val:.3f}</span>",
                 unsafe_allow_html=True)
-
         st.markdown("---")
     else:
         st.warning("⚠️ 数据库尚未更新，请运行 'climate_collector.py' 获取数据。")
 
 
-# === HDD 数据抓取函数 (改为读取 CSV) ===
-# [修改说明] 恢复使用 @st.cache 以兼容旧版本
+# === HDD 数据抓取函数 (CSV版) ===
 @st.cache(ttl=60, suppress_st_warning=True)
 def get_gas_hdd():
     csv_file = "history_hdd.csv"
     try:
         if not os.path.exists(csv_file):
-            return None
+            return None, None
 
         df = pd.read_csv(csv_file)
-        if df.empty: return None
+        if df.empty: return None, None
 
-        # 取最新一行
         latest = df.iloc[-1]
+        source_date = latest.get("Source_Date", "N/A")
 
         data_bag = {
             "New England": {
@@ -253,13 +241,12 @@ def get_gas_hdd():
                 "dev_last_year": latest.get("US_Dev_Year", 0)
             }
         }
-        return data_bag
+        return data_bag, source_date
     except Exception as e:
-        return None
+        return None, None
 
 
-# === ENSO 报告解析 (保持爬虫) ===
-# [修改说明] 恢复使用 @st.cache
+# === ENSO 报告解析 (保持原样) ===
 @st.cache(ttl=3600, suppress_st_warning=True)
 def get_enso_summary(url):
     try:
@@ -298,39 +285,43 @@ def get_enso_summary(url):
     return {"status": "Error", "body": []}
 
 
-# === EIA 数据解析 (改为读取 CSV) ===
-# [修改说明] 恢复使用 @st.cache
+# === EIA 数据解析 (CSV版 - 极简行名) ===
 @st.cache(ttl=60, suppress_st_warning=True)
 def load_eia_total():
     csv_file = "history_storage.csv"
     try:
         if not os.path.exists(csv_file):
-            return None
+            return None, None
 
         df_csv = pd.read_csv(csv_file)
-        if df_csv.empty: return None
+        if df_csv.empty: return None, None
 
         # 取最新一行
         latest = df_csv.iloc[-1]
 
-        # 1. 恢复列名格式 (日期)
+        # 1. 日期处理
         report_date_str = latest.get("Report_Date", "")
-
         try:
             current_date_obj = datetime.strptime(report_date_str, "%Y-%m-%d")
             week_ago_obj = current_date_obj - timedelta(days=7)
+            # 格式化为短日期 mm/dd/yy (e.g. 11/21/25)
             curr_fmt = current_date_obj.strftime("%m/%d/%y")
             prev_fmt = week_ago_obj.strftime("%m/%d/%y")
         except:
             curr_fmt = "Current"
             prev_fmt = "Prev Week"
 
-        # 2. 构造列名列表
-        labels = [curr_fmt, prev_fmt, "Net change (Bcf)",
-                  "Year ago (Bcf)", "Year-ago % change",
-                  "5-yr avg (Bcf)", "5-yr % change"]
+        # 2. 构造简洁行名 (Labels)
+        labels = [
+            curr_fmt,  # 1. 具体日期
+            prev_fmt,  # 2. 上周具体日期 (显示数字)
+            "Net Chg",  # 3. 简写
+            "Last Yr",  # 4. 简写
+            "vs Year %",  # 5. 简写
+            "5-Yr Avg",  # 6. 简写
+            "vs 5Yr %"  # 7. 简写
+        ]
 
-        # 3. 辅助计算函数
         def calc_pct(curr, base):
             try:
                 if base is None or base == 0: return None
@@ -338,54 +329,42 @@ def load_eia_total():
             except:
                 return None
 
+        # 3. 提取各个区域的数据 (包含 Midwest 和 SouthCentral)
+        regions_to_extract = [
+            ("Total", "Total"),  # 缩写
+            ("East", "East"),
+            ("Midwest", "MW"),
+            ("SouthCentral", "S.Central")  # 缩写
+        ]
+
         rows = []
+        for prefix, display_name in regions_to_extract:
+            stock = latest.get(f"{prefix}_Stock")
+            net = latest.get(f"{prefix}_Net_Change")
+            yr = latest.get(f"{prefix}_Year_Ago")
+            avg = latest.get(f"{prefix}_5Yr_Avg")
 
-        # --- Total Lower 48 ---
-        t_stock = latest.get("Total_Stock")
-        t_net = latest.get("Total_Net_Change")
-        t_yr = latest.get("Total_Year_Ago")
-        t_avg = latest.get("Total_5Yr_Avg")
+            prev = stock - net if (stock is not None and net is not None) else None
 
-        t_prev = t_stock - t_net if (t_stock is not None and t_net is not None) else None
-
-        r1 = {
-            "Region": "Total",
-            labels[0]: t_stock,
-            labels[1]: t_prev,
-            labels[2]: t_net,
-            labels[3]: t_yr,
-            labels[4]: calc_pct(t_stock, t_yr),
-            labels[5]: t_avg,
-            labels[6]: calc_pct(t_stock, t_avg)
-        }
-        rows.append(r1)
-
-        # --- East ---
-        e_stock = latest.get("East_Stock")
-        e_net = latest.get("East_Net_Change")
-        e_yr = latest.get("East_Year_Ago")
-        e_avg = latest.get("East_5Yr_Avg")
-
-        e_prev = e_stock - e_net if (e_stock is not None and e_net is not None) else None
-
-        r2 = {
-            "Region": "East",
-            labels[0]: e_stock,
-            labels[1]: e_prev,
-            labels[2]: e_net,
-            labels[3]: e_yr,
-            labels[4]: calc_pct(e_stock, e_yr),
-            labels[5]: e_avg,
-            labels[6]: calc_pct(e_stock, e_avg)
-        }
-        rows.append(r2)
+            row = {
+                "Region": display_name,
+                labels[0]: stock,
+                labels[1]: prev,
+                labels[2]: net,
+                labels[3]: yr,
+                labels[4]: calc_pct(stock, yr),
+                labels[5]: avg,
+                labels[6]: calc_pct(stock, avg)
+            }
+            rows.append(row)
 
         df_display = pd.DataFrame(rows).set_index("Region")
 
-        return df_display
+        # 返回 DataFrame 和 报告日期字符串
+        return df_display, report_date_str
 
     except Exception as e:
-        return None
+        return None, None
 
 
 # === 4. 侧边栏导航 ===
@@ -395,7 +374,7 @@ with st.sidebar:
     # ---- HDD 数据板块 ----
     st.subheader("🔥 实际燃烧需求 (HDD)")
 
-    hdd_data = get_gas_hdd()
+    hdd_data, hdd_date = get_gas_hdd()
 
     if hdd_data:
         def show_dual_metric(col, label, data):
@@ -427,6 +406,9 @@ with st.sidebar:
         show_dual_metric(hd_col1, "Midwest", hdd_data.get('Midwest', {}))
         show_dual_metric(hd_col2, "US Total", hdd_data.get('US Total', {}))
 
+        # [新增] 数据日期标注
+        st.caption(f"📅 Source Updated: {hdd_date}")
+
         st.caption("[NOAA HDD Data](https://www.cpc.ncep.noaa.gov/products/analysis_monitoring/cdus/degree_days/)")
 
     else:
@@ -434,11 +416,13 @@ with st.sidebar:
 
     st.markdown("---")
 
-    # ---- EIA 模块 ----
+    # ---- EIA 模块 (表格版) ----
     st.markdown("### 🏦 EIA 天然气库存")
     try:
-        eia_df = load_eia_total()
+        eia_df, eia_date = load_eia_total()
+
         if eia_df is not None:
+            # 转置
             tdf = eia_df.T
 
 
@@ -449,7 +433,8 @@ with st.sidebar:
                 return f"{v:.1f}".rstrip("0").rstrip(".")
 
 
-            highlight_rows = ["Net change (Bcf)", "Year-ago % change", "5-yr % change"]
+            # 高亮行名 (需匹配 load_eia_total 定义的 labels)
+            highlight_rows = ["Net Chg", "vs Year %", "vs 5Yr %"]
 
 
             def highlight_style(df):
@@ -474,6 +459,10 @@ with st.sidebar:
 
 
             st.dataframe(tdf.style.format(num_fmt).apply(highlight_style, axis=None))
+
+            # [新增] 数据日期标注
+            st.caption(f"📅 Source Updated: {eia_date}")
+
         else:
             st.write("未找到 EIA 数据。")
     except Exception as e:
