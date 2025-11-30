@@ -206,7 +206,8 @@ def display_current_index_value(index_name):
 
 
 # === HDD 数据抓取函数 (CSV版) ===
-@st.cache(ttl=60, suppress_st_warning=True)
+# [修改点] 使用 @st.cache_data 替换 @st.cache
+@st.cache_data(ttl=60)
 def get_gas_hdd():
     csv_file = "history_hdd.csv"
     try:
@@ -247,7 +248,8 @@ def get_gas_hdd():
 
 
 # === ENSO 报告解析 (保持原样) ===
-@st.cache(ttl=3600, suppress_st_warning=True)
+# [修改点] 使用 @st.cache_data 替换 @st.cache
+@st.cache_data(ttl=3600)
 def get_enso_summary(url):
     try:
         headers = {"User-Agent": "Mozilla/5.0"}
@@ -286,7 +288,8 @@ def get_enso_summary(url):
 
 
 # === EIA 数据解析 (CSV版 - 极简行名) ===
-@st.cache(ttl=60, suppress_st_warning=True)
+# [修改点] 使用 @st.cache_data 替换 @st.cache
+@st.cache_data(ttl=60)
 def load_eia_total():
     csv_file = "history_storage.csv"
     try:
@@ -296,27 +299,23 @@ def load_eia_total():
         df_csv = pd.read_csv(csv_file)
         if df_csv.empty: return None, None
 
-        # 取最新一行
         latest = df_csv.iloc[-1]
 
-        # 1. 日期处理
         report_date_str = latest.get("Report_Date", "")
         try:
             current_date_obj = datetime.strptime(report_date_str, "%Y-%m-%d")
             week_ago_obj = current_date_obj - timedelta(days=7)
-            # 格式化为短日期 mm/dd/yy (e.g. 11/21/25)
             curr_fmt = current_date_obj.strftime("%m/%d/%y")
             prev_fmt = week_ago_obj.strftime("%m/%d/%y")
         except:
             curr_fmt = "Current"
             prev_fmt = "Prev Week"
 
-        # 2. 构造简洁行名 (Labels)
         labels = [
-            curr_fmt,  # 1. 具体日期
-            prev_fmt,  # 2. 上周具体日期 (显示数字)
+            curr_fmt,  # 1. 本周
+            prev_fmt,  # 2. 上周
             "Net Chg",  # 3. 简写
-            "Last Yr",  # 4. 简写
+            "Year Ago",  # 4. 简写
             "vs Year %",  # 5. 简写
             "5-Yr Avg",  # 6. 简写
             "vs 5Yr %"  # 7. 简写
@@ -329,12 +328,11 @@ def load_eia_total():
             except:
                 return None
 
-        # 3. 提取各个区域的数据 (包含 Midwest 和 SouthCentral)
         regions_to_extract = [
-            ("Total", "Total"),  # 缩写
+            ("Total", "Total"),
             ("East", "East"),
-            ("Midwest", "MW"),
-            ("SouthCentral", "S.Central")  # 缩写
+            ("Midwest", "Midwest"),
+            ("SouthCentral", "S.Central")
         ]
 
         rows = []
@@ -360,7 +358,6 @@ def load_eia_total():
 
         df_display = pd.DataFrame(rows).set_index("Region")
 
-        # 返回 DataFrame 和 报告日期字符串
         return df_display, report_date_str
 
     except Exception as e:
@@ -369,7 +366,14 @@ def load_eia_total():
 
 # === 4. 侧边栏导航 ===
 with st.sidebar:
-    st.markdown("## ⚛️ 核心监控数据")
+
+    # [新增] 视图切换 (核心功能)
+    view_mode = st.radio(
+        "",
+        ["🚀 实时监控", "📅 历史回溯"],
+        index=0
+    )
+    st.markdown("---")
 
     # ---- HDD 数据板块 ----
     st.subheader("🔥 实际燃烧需求 (HDD)")
@@ -406,9 +410,7 @@ with st.sidebar:
         show_dual_metric(hd_col1, "Midwest", hdd_data.get('Midwest', {}))
         show_dual_metric(hd_col2, "US Total", hdd_data.get('US Total', {}))
 
-        # [新增] 数据日期标注
         st.caption(f"📅 Source Updated: {hdd_date}")
-
         st.caption("[NOAA HDD Data](https://www.cpc.ncep.noaa.gov/products/analysis_monitoring/cdus/degree_days/)")
 
     else:
@@ -416,13 +418,12 @@ with st.sidebar:
 
     st.markdown("---")
 
-    # ---- EIA 模块 (表格版) ----
+    # ---- EIA 模块 ----
     st.markdown("### 🏦 EIA 天然气库存")
     try:
         eia_df, eia_date = load_eia_total()
 
         if eia_df is not None:
-            # 转置
             tdf = eia_df.T
 
 
@@ -433,7 +434,6 @@ with st.sidebar:
                 return f"{v:.1f}".rstrip("0").rstrip(".")
 
 
-            # 高亮行名 (需匹配 load_eia_total 定义的 labels)
             highlight_rows = ["Net Chg", "vs Year %", "vs 5Yr %"]
 
 
@@ -444,8 +444,6 @@ with st.sidebar:
                         for col in df.columns:
                             val = df.loc[idx, col]
                             base = 'font-weight: bold; background-color: #fff3cd;'
-                            # 下降（负值）= 库存减少 = 利多 = 绿色
-                            # 上升（正值）= 库存增加 = 利空 = 红色
                             if pd.notna(val):
                                 if val < 0:
                                     styles.loc[idx, col] = base + 'color: #2e7d32;'
@@ -459,8 +457,6 @@ with st.sidebar:
 
 
             st.dataframe(tdf.style.format(num_fmt).apply(highlight_style, axis=None))
-
-            # [新增] 数据日期标注
             st.caption(f"📅 Source Updated: {eia_date}")
 
         else:
@@ -488,184 +484,426 @@ with st.sidebar:
 
     st.caption("Geoscience & Financial Analytics MH")
 
-# === 5. 主界面 ===
-st.title("⚛️ 天然气气象分析终端 (Climate–Natural Gas Analytics)")
-st.caption(
-    f"**数据更新 (Last Updated):** `{datetime.now().astimezone().strftime('%Y-%m-%d %H:%M %Z')}`")
-st.markdown("---")
+# ==========================================
+# 5. 主逻辑控制 (Live vs History)
+# ==========================================
 
-# [新增] 辅助函数调用：在主界面头部调用一次，供 Tabs 读取 CSV
-latest_data = load_latest_climate_data()
+if view_mode == "🚀 实时监控":
+    # === 原本的主界面代码 ===
+    st.title("⚛️ 天然气气象分析终端")
+    st.caption(
+        f"**数据更新 (Last Updated):** `{datetime.now().astimezone().strftime('%Y-%m-%d %H:%M %Z')}`")
+    st.markdown("---")
+
+    latest_data = load_latest_climate_data()
 
 
-# [新增] 辅助函数 - 显示当前气象指标的值
-def display_current_index_value(index_name):
-    if latest_data:
-        # 获取 CSV 中的值
-        obs_val = latest_data.get(f'{index_name}_Obs')
-        d7_val = latest_data.get(f'{index_name}_Day7')
-        d10_val = latest_data.get(f'{index_name}_Day10')
+    # [新增] 辅助函数 - 显示当前气象指标的值
+    def display_current_index_value(index_name):
+        if latest_data:
+            # 获取 CSV 中的值
+            obs_val = latest_data.get(f'{index_name}_Obs')
+            d7_val = latest_data.get(f'{index_name}_Day7')
+            d10_val = latest_data.get(f'{index_name}_Day10')
 
-        # === 核心颜色逻辑：根据指标确定 Bullish/Bearish (Green/Red) ===
-        is_nao_ao = index_name in ["NAO", "AO"]
+            # === 核心颜色逻辑 ===
+            is_nao_ao = index_name in ["NAO", "AO"]
 
-        def get_style(value):
-            if value is None: return "color: #888;", "-"
+            def get_style(value):
+                if value is None: return "color: #888;", "-"
+                is_positive = value > 0
+                if is_nao_ao:
+                    is_bullish = not is_positive
+                else:
+                    is_bullish = is_positive
+                color = "#2e7d32" if is_bullish else "#c62828"
+                arrow = "▲" if is_bullish else "▼"
+                return f"color: {color};", arrow
 
-            is_positive = value > 0
+            obs_style, obs_arrow = get_style(obs_val)
+            d7_style, d7_arrow = get_style(d7_val)
+            d10_style, d10_arrow = get_style(d10_val)
 
-            # AO/NAO: 负值是利多 (Green)
-            if is_nao_ao:
-                is_bullish = not is_positive
-                # PNA: 正值是利多 (Green)
-            else:
-                is_bullish = is_positive
-
-            color = "#2e7d32" if is_bullish else "#c62828"  # Green or Red
-            arrow = "▲" if is_bullish else "▼"
-
-            return f"color: {color};", arrow
-
-        obs_style, obs_arrow = get_style(obs_val)
-        d7_style, d7_arrow = get_style(d7_val)
-        d10_style, d10_arrow = get_style(d10_val)
-
-        # [修改] 布局从 st.markdown 迁移到自定义 HTML 卡片
-        html_card = f"""
-        <div style='
-            margin-top: 15px; 
-            border: 1px solid #e0e0e0; 
-            border-radius: 6px; 
-            padding: 8px; 
-            background-color: #f8f8f8;
-            display: flex; 
-            justify-content: space-around;
-            text-align: center;
-            font-size: 0.95em;
-        '>
-            <div style='flex:1; border-right: 1px solid #eee;'>
-                <span style='font-weight: bold; color: #555;'>OBSERVED (Today)</span><br>
-                <span style='font-size: 1.3em; {obs_style}; font-weight: bold;'>{obs_val:.3f}</span>
+            html_card = f"""
+            <div style='
+                margin-top: 15px; 
+                border: 1px solid #e0e0e0; 
+                border-radius: 6px; 
+                padding: 8px; 
+                background-color: #f8f8f8;
+                display: flex; 
+                justify-content: space-around;
+                text-align: center;
+                font-size: 0.95em;
+            '>
+                <div style='flex:1; border-right: 1px solid #eee;'>
+                    <span style='font-weight: bold; color: #555;'>OBSERVED (Today)</span><br>
+                    <span style='font-size: 1.3em; {obs_style}; font-weight: bold;'>{obs_val:.3f}</span>
+                </div>
+                <div style='flex:1; border-right: 1px solid #eee;'>
+                    <span style='font-weight: bold; color: #555;'>DAY 7 FORECAST</span><br>
+                    <span style='font-size: 1.3em; {d7_style}; font-weight: bold;'>{d7_val:.3f}</span>
+                </div>
+                <div style='flex:1;'>
+                    <span style='font-weight: bold; color: #555;'>DAY 10 FORECAST</span><br>
+                    <span style='font-size: 1.3em; {d10_style}; font-weight: bold;'>{d10_val:.3f}</span>
+                </div>
             </div>
-            <div style='flex:1; border-right: 1px solid #eee;'>
-                <span style='font-weight: bold; color: #555;'>DAY 7 FORECAST</span><br>
-                <span style='font-size: 1.3em; {d7_style}; font-weight: bold;'>{d7_val:.3f}</span>
-            </div>
-            <div style='flex:1;'>
-                <span style='font-weight: bold; color: #555;'>DAY 10 FORECAST</span><br>
-                <span style='font-size: 1.3em; {d10_style}; font-weight: bold;'>{d10_val:.3f}</span>
-            </div>
-        </div>
-        """
-        st.markdown(html_card, unsafe_allow_html=True)
-    else:
-        st.warning("⚠️ 数据库尚未更新，请运行 'climate_collector.py' 获取数据。")
+            """
+            st.markdown(html_card, unsafe_allow_html=True)
+        else:
+            st.warning("⚠️ 数据库尚未更新，请运行 'climate_collector.py' 获取数据。")
 
 
-# === 6. 核心气象板块 (4 Tabs) ===
-st.subheader("📡 大气遥相关机制 (Atmospheric Teleconnections)")
-st.caption("注：图表展示 GEFS 集合预报发散度。红线 (Mean) 代表主流趋势。")
+    # === 核心气象板块 (4 Tabs) ===
+    st.subheader("📡 大气遥相关机制 (Atmospheric Teleconnections)")
+    st.caption("注：图表展示 GEFS 集合预报发散度。红线 (Mean) 代表主流趋势。")
 
-tab_nao, tab_ao, tab_pna, tab_enso = st.tabs([
-    "1. 北大西洋涛动 (NAO)", "2. 北极涛动 (AO)", "3. 太平洋-北美模式 (PNA)", "🌊 NOAA ENSO 周报"
-])
+    tab_nao, tab_ao, tab_pna, tab_enso = st.tabs([
+        "1. 北大西洋涛动 (NAO)", "2. 北极涛动 (AO)", "3. 太平洋-北美模式 (PNA)", "🌊 NOAA ENSO 周报"
+    ])
 
-with tab_nao:
-    col_img, col_content = st.columns([1, 1.5])
-    with col_img: clickable_image_html(IMG_URLS["NAO"], "NAO")
-    with col_content:
-        st.markdown("<div class='tag-minus'>📉 负相位 / Negative (-)</div>", unsafe_allow_html=True)
-        signal_card("阻塞效应 (Blocking)", "西风急流弯曲，格陵兰高压形成。", "冷气团在美东<b>停滞不前</b>。",
-                    "极强利多 (寒潮持续)")
+    with tab_nao:
+        col_img, col_content = st.columns([1, 1.5])
+        with col_img: clickable_image_html(IMG_URLS["NAO"], "NAO")
+        with col_content:
+            st.markdown("<div class='tag-minus'>📉 负相位 / Negative (-)</div>", unsafe_allow_html=True)
+            signal_card("阻塞效应 (Blocking)", "西风急流弯曲，格陵兰高压形成。", "冷气团在美东<b>停滞不前</b>。",
+                        "极强利多 (寒潮持续)")
+            display_current_index_value("NAO")
 
-        # [NEW] NAO 数据卡片 - 放置在信号卡片下方
-        display_current_index_value("NAO")
+    with tab_ao:
+        col_img, col_content = st.columns([1, 1.5])
+        with col_img: clickable_image_html(IMG_URLS["AO"], "AO")
+        with col_content:
+            st.markdown("<div class='tag-minus'>📉 负相位 / Negative (-)</div>", unsafe_allow_html=True)
+            signal_card("极涡崩溃 (Vortex Collapse)", "极地高压控制，冷空气南下。", "广泛的<b>冷空气爆发</b>。",
+                        "利多 (冷源充足)")
+            display_current_index_value("AO")
 
-with tab_ao:
-    col_img, col_content = st.columns([1, 1.5])
-    with col_img: clickable_image_html(IMG_URLS["AO"], "AO")
-    with col_content:
-        st.markdown("<div class='tag-minus'>📉 负相位 / Negative (-)</div>", unsafe_allow_html=True)
-        signal_card("极涡崩溃 (Vortex Collapse)", "极地高压控制，冷空气南下。", "广泛的<b>冷空气爆发</b>。",
-                    "利多 (冷源充足)")
+    with tab_pna:
+        col_img, col_content = st.columns([1, 1.5])
+        with col_img: clickable_image_html(IMG_URLS["PNA"], "PNA")
+        with col_content:
+            st.markdown("<div class='tag-plus'>📈 正相位 / Positive (+)</div>", unsafe_allow_html=True)
+            signal_card("西脊东槽 (Ridge-Trough)", "北美西部高压脊隆起。", "建立<b>经向环流</b>输送冷空气。",
+                        "利多 (通道打开)")
+            display_current_index_value("PNA")
 
-        # [NEW] AO 数据卡片 - 放置在信号卡片下方
-        display_current_index_value("AO")
+    with tab_enso:
+        with st.spinner("正在解析 NOAA 最新周报..."):
+            enso_data = get_enso_summary(IMG_URLS["LANINA"])
+        st.info(f"**Current Status:** {enso_data['status']}")
+        if enso_data['body']:
+            for s in enso_data['body']: st.markdown(f"- {s}")
+        else:
+            st.warning("未提取到内容，请检查 PDF。")
 
-with tab_pna:
-    col_img, col_content = st.columns([1, 1.5])
-    with col_img: clickable_image_html(IMG_URLS["PNA"], "PNA")
-    with col_content:
-        st.markdown("<div class='tag-plus'>📈 正相位 / Positive (+)</div>", unsafe_allow_html=True)
-        signal_card("西脊东槽 (Ridge-Trough)", "北美西部高压脊隆起。", "建立<b>经向环流</b>输送冷空气。",
-                    "利多 (通道打开)")
+    # === 决策矩阵 ===
+    st.markdown("---")
+    st.subheader("🎯 宏观交易决策矩阵 (Decision Matrix)")
+    m1, m2, m3 = st.columns(3)
 
-        # [NEW] PNA 数据卡片 - 放置在信号卡片下方
-        display_current_index_value("PNA")
+    with m1:
+        st.success("🔥 **极寒模式 (Strong Buy)**")
+        st.markdown("""<div class='decision-content'>
+        <span class='decision-label'>信号组合:</span>
+        <span class='tag-minus'>NAO (-)</span> + <span class='tag-minus'>AO (-)</span> + <span class='tag-plus'>PNA (+)</span>
+        <span class='decision-label'>🥶 天气后果:</span>
+        阻寒高压 + 极涡崩溃 + 通道打开。宾州/东北部遭遇持续性暴雪与极寒。
+        <span class='decision-label'>💰 操作建议:</span>
+        <b>押注上涨:</b> 买入 EQT / NG Futures。
+    </div>""", unsafe_allow_html=True)
 
-with tab_enso:
-    with st.spinner("正在解析 NOAA 最新周报..."):
-        enso_data = get_enso_summary(IMG_URLS["LANINA"])
-    st.info(f"**Current Status:** {enso_data['status']}")
-    if enso_data['body']:
-        for s in enso_data['body']: st.markdown(f"- {s}")
-    else:
-        st.warning("未提取到内容，请检查 PDF。")
+    with m2:
+        st.error("🟢 **暖冬模式 (Strong Sell)**")
+        st.markdown("""<div class='decision-content'>
+        <span class='decision-label'>信号组合:</span>
+        <span class='tag-bear'>NAO (+)</span> + <span class='tag-bear'>AO (+)</span> + <span class='tag-bear'>PNA (-)</span>
+        <span class='decision-label'>☀️ 天气后果:</span>
+        强劲西风急流 + 东南高压脊。暖湿气流主导美东，不下雪只下雨。
+        <span class='decision-label'>💰 操作建议:</span>
+        <b>押注下跌:</b> 卖出资产 / 观望。
+    </div>""", unsafe_allow_html=True)
 
-# === 7. 决策矩阵 ===
-st.markdown("---")
-st.subheader("🎯 宏观交易决策矩阵 (Decision Matrix)")
-m1, m2, m3 = st.columns(3)
+    with m3:
+        st.warning("⚖️ **震荡模式 (Neutral)**")
+        st.markdown("""<div class='decision-content'>
+        <span class='decision-label'>信号组合:</span>
+        <span class='tag-neutral'>信号背离 (Mixed)</span>
+        <span class='decision-label'>💨 天气后果:</span>
+        冷源充足但缺乏阻塞。寒潮来去匆匆，气温忽冷忽热。
+        <span class='decision-label'>💰 操作建议:</span>
+        <b>波段操作:</b> 不要长期持有。
+    </div>""", unsafe_allow_html=True)
 
-with m1:
-    st.success("🔥 **极寒模式 (Strong Buy)**")  # 颜色对调：利多 (Buy) = 绿色 (Success)
-    st.markdown("""<div class='decision-content'>
-    <span class='decision-label'>信号组合:</span>
-    <span class='tag-minus'>NAO (-)</span> + <span class='tag-minus'>AO (-)</span> + <span class='tag-plus'>PNA (+)</span>
-    <span class='decision-label'>🥶 天气后果:</span>
-    阻寒高压 + 极涡崩溃 + 通道打开。宾州/东北部遭遇持续性暴雪与极寒。
-    <span class='decision-label'>💰 操作建议:</span>
-    <b>押注上涨:</b> 买入 EQT / NG Futures。
-</div>""", unsafe_allow_html=True)
+    # === 地学原理 ===
+    st.markdown("---")
+    st.subheader("📚 Geophysical Fluid Dynamics & Market Mapping")
+    with st.expander("📖 点击展开：详细逻辑链条推演 (Logic Chain Analysis)", expanded=True):
+        st.markdown("#### 1. North Atlantic Oscillation (NAO)")
+        st.markdown(
+            "* **Phenomenon:** Significant **Positive Geopotential Height Anomalies** over Greenland.\n"
+            "* **Logic Chain:** <span class='tag-minus'>Negative (-)</span> NAO $\\rightarrow$ Traffic Jam for Weather Systems $\\rightarrow$ **Cold Air Stagnation**.",
+            unsafe_allow_html=True)
+        st.markdown("#### 2. Arctic Oscillation (AO)")
+        st.markdown(
+            "* **Phenomenon:** Rise in Sea Level Pressure (SLP) over the Arctic Cap.\n"
+            "* **Logic Chain:** <span class='tag-minus'>Negative (-)</span> AO $\\rightarrow$ **Meridional Spillover** of Arctic Air $\\rightarrow$ High Heating Demand.",
+            unsafe_allow_html=True)
+        st.markdown("#### 3. Pacific-North American (PNA)")
+        st.markdown(
+            "* **Phenomenon:** Quadripole pressure anomaly pattern.\n"
+            "* **Logic Chain:** <span class='tag-plus'>Positive (+)</span> PNA $\\rightarrow$ NW-to-SE Flow Vector $\\rightarrow$ **Targeted Delivery** of cold air.",
+            unsafe_allow_html=True)
 
-with m2:
-    st.error("🟢 **暖冬模式 (Strong Sell)**")  # 颜色对调：利空 (Sell) = 红色 (Error)
-    st.markdown("""<div class='decision-content'>
-    <span class='decision-label'>信号组合:</span>
-    <span class='tag-bear'>NAO (+)</span> + <span class='tag-bear'>AO (+)</span> + <span class='tag-bear'>PNA (-)</span>
-    <span class='decision-label'>☀️ 天气后果:</span>
-    强劲西风急流 + 东南高压脊。暖湿气流主导美东，不下雪只下雨。
-    <span class='decision-label'>💰 操作建议:</span>
-    <b>押注下跌:</b> 卖出资产 / 观望。
-</div>""", unsafe_allow_html=True)
+else:
+    # ==========================================
+    # 📅 历史数据回溯分析模式 (History)
+    # ==========================================
+    st.title("📅 历史数据库 (Historical Data Archive)")
 
-with m3:
-    st.warning("⚖️ **震荡模式 (Neutral)**")
-    st.markdown("""<div class='decision-content'>
-    <span class='decision-label'>信号组合:</span>
-    <span class='tag-neutral'>信号背离 (Mixed)</span>
-    <span class='decision-label'>💨 天气后果:</span>
-    冷源充足但缺乏阻塞。寒潮来去匆匆，气温忽冷忽热。
-    <span class='decision-label'>💰 操作建议:</span>
-    <b>波段操作:</b> 不要长期持有。
-</div>""", unsafe_allow_html=True)
+    tab_hist_weather, tab_hist_hdd, tab_hist_eia = st.tabs(["☁️ 气象 (Weather)", "🔥 需求 (HDD)", "🏦 库存 (EIA)"])
 
-# === 8. 地学原理 ===
-st.markdown("---")
-st.subheader("📚 Geophysical Fluid Dynamics & Market Mapping")
-with st.expander("📖 点击展开：详细逻辑链条推演 (Logic Chain Analysis)", expanded=True):
-    st.markdown("#### 1. North Atlantic Oscillation (NAO)")
-    st.markdown(
-        "* **Phenomenon:** Significant **Positive Geopotential Height Anomalies** over Greenland.\n"
-        "* **Logic Chain:** <span class='tag-minus'>Negative (-)</span> NAO $\\rightarrow$ Traffic Jam for Weather Systems $\\rightarrow$ **Cold Air Stagnation**.",
-        unsafe_allow_html=True)
-    st.markdown("#### 2. Arctic Oscillation (AO)")
-    st.markdown(
-        "* **Phenomenon:** Rise in Sea Level Pressure (SLP) over the Arctic Cap.\n"
-        "* **Logic Chain:** <span class='tag-minus'>Negative (-)</span> AO $\\rightarrow$ **Meridional Spillover** of Arctic Air $\\rightarrow$ High Heating Demand.",
-        unsafe_allow_html=True)
-    st.markdown("#### 3. Pacific-North American (PNA)")
-    st.markdown(
-        "* **Phenomenon:** Quadripole pressure anomaly pattern.\n"
-        "* **Logic Chain:** <span class='tag-plus'>Positive (+)</span> PNA $\\rightarrow$ NW-to-SE Flow Vector $\\rightarrow$ **Targeted Delivery** of cold air.",
-        unsafe_allow_html=True)
+
+    # === 辅助函数：格式化日期列 ===
+    def format_date_cols(df):
+        for col in ["Run_Date", "Source_Date", "Report_Date", "Date"]:
+            if col in df.columns:
+                try:
+                    df[col] = pd.to_datetime(df[col]).dt.strftime('%Y-%m-%d')
+                except:
+                    pass
+        return df
+
+
+    # === 辅助函数：查找日期列 ===
+    def get_date_col(df):
+        for col in ["Report_Date", "Run_Date", "Date", "date", "Timestamp"]:
+            if col in df.columns: return col
+        return None
+
+
+    # --- 1. 气象历史 (保持三塔布局) ---
+    with tab_hist_weather:
+        st.markdown("### 📡 遥相关趋势追踪")
+        if os.path.exists("history_weather.csv"):
+            try:
+                df = pd.read_csv("history_weather.csv")
+                date_col = get_date_col(df)
+                if date_col:
+                    df = df.sort_values(date_col, ascending=False)
+                    df = format_date_cols(df)
+                    df = df.set_index(date_col)
+                    df.index.name = "Run Date"
+
+
+                    def get_cols(prefix):
+                        target = [f"{prefix}_Obs", f"{prefix}_Day7", f"{prefix}_Day10"]
+                        rename_map = {f"{prefix}_Obs": "Obs", f"{prefix}_Day7": "Day 7", f"{prefix}_Day10": "Day 10"}
+                        available = [c for c in target if c in df.columns]
+                        return df[available].rename(columns=rename_map)
+
+
+                    df_ao, df_nao, df_pna = get_cols("AO"), get_cols("NAO"), get_cols("PNA")
+
+
+                    def style_ao_nao(val):
+                        if pd.isna(val): return ''
+                        if val < 0: return 'color: #2e7d32; background-color: #e8f5e9; font-weight: bold'
+                        if val > 0: return 'color: #c62828; background-color: #ffebee'
+                        return ''
+
+
+                    def style_pna(val):
+                        if pd.isna(val): return ''
+                        if val > 0: return 'color: #2e7d32; background-color: #e8f5e9; font-weight: bold'
+                        if val < 0: return 'color: #c62828; background-color: #ffebee'
+                        return ''
+
+
+                    c1, c2, c3 = st.columns([1.3, 1, 1])
+                    with c1:
+                        st.markdown("##### AO"); st.dataframe(df_ao.style.format("{:.2f}").applymap(style_ao_nao),
+                                                                 width='stretch', height=500)
+                    with c2:
+                        st.markdown("##### NAO"); st.dataframe(df_nao.style.format("{:.2f}").applymap(style_ao_nao),
+                                                                 width='stretch', hide_index=True, height=500)
+                    with c3:
+                        st.markdown("##### PNA"); st.dataframe(df_pna.style.format("{:.2f}").applymap(style_pna),
+                                                                  width='stretch', hide_index=True, height=500)
+                else:
+                    st.warning("数据异常")
+            except:
+                st.info("暂无数据")
+        else:
+            st.info("暂无数据")
+
+    # --- 2. HDD 历史 (美东补全 Act/Dev/YoY) ---
+    with tab_hist_hdd:
+        st.markdown("### 🔥 区域需求全览 (HDD)")
+        st.caption("Act:实际 | Dev:距平 | YoY:同比")
+
+        if os.path.exists("history_hdd.csv"):
+            try:
+                df = pd.read_csv("history_hdd.csv")
+                if "Run_Date" in df.columns:
+                    df = df.sort_values("Run_Date", ascending=False)
+                    df = format_date_cols(df)
+
+                # (A) 美东 (East) - 最全数据
+                # 构造目标列
+                rename_east = {
+                    "Run_Date": "Run Date", "Source_Date": "Source",
+                    "NE_Actual": "NE Act", "NE_Dev_Norm": "NE Dev", "NE_Dev_Year": "NE YoY",
+                    "MA_Actual": "MA Act", "MA_Dev_Norm": "MA Dev", "MA_Dev_Year": "MA YoY"
+                }
+                # 过滤存在的列
+                valid_east = [c for c in rename_east.keys() if c in df.columns]
+                df_east = df[valid_east].rename(columns=rename_east)
+                if "Run Date" in df_east.columns: df_east = df_east.set_index("Run Date")
+
+                # (B) 中西部
+                df_mw = df[["MW_Actual", "MW_Dev_Norm", "MW_Dev_Year"]].rename(
+                    columns={"MW_Actual": "Act", "MW_Dev_Norm": "Dev", "MW_Dev_Year": "YoY"})
+
+                # (C) 全美
+                df_us = df[["US_Actual", "US_Dev_Norm", "US_Dev_Year"]].rename(
+                    columns={"US_Actual": "Act", "US_Dev_Norm": "Dev", "US_Dev_Year": "YoY"})
+
+
+                def style_hdd(val):
+                    if pd.isna(val): return ''
+                    if isinstance(val, (int, float)):
+                        if val > 0: return 'color: #2e7d32; font-weight: bold; background-color: #e8f5e9'
+                        if val < 0: return 'color: #c62828; font-weight: bold; background-color: #ffebee'
+                    return ''
+
+
+                c1, c2, c3 = st.columns([2.3, 1, 1])
+                with c1:
+                    st.markdown("**🏙 美东 (East)**")
+                    # 找出数字列进行格式化
+                    num_cols = [c for c in df_east.columns if "Act" in c or "Dev" in c or "YoY" in c]
+                    color_cols = [c for c in df_east.columns if "Dev" in c or "YoY" in c]
+                    st.dataframe(df_east.style.format("{:.0f}", subset=num_cols).applymap(style_hdd, subset=color_cols),
+                                 width='stretch')
+                with c2:
+                    st.markdown("**🏭 中西部 (Midwest)**")
+                    st.dataframe(df_mw.style.format("{:.0f}").applymap(style_hdd, subset=["Dev", "YoY"]),
+                                 width='stretch', hide_index=True)
+                with c3:
+                    st.markdown("**🇺🇸 全美 (US Total)**")
+                    st.dataframe(df_us.style.format("{:.0f}").applymap(style_hdd, subset=["Dev", "YoY"]),
+                                 width='stretch', hide_index=True)
+            except Exception as e:
+                st.error(f"Error: {e}")
+        else:
+            st.info("暂无数据")
+
+    # --- 3. EIA 历史 (恢复 6列×4区 全维度布局) ---
+    with tab_hist_eia:
+        st.markdown("### 🏦 库存全景 (Detailed Storage Report)")
+
+        if os.path.exists("history_storage.csv"):
+            try:
+                df = pd.read_csv("history_storage.csv")
+                date_col = "Report_Date" if "Report_Date" in df.columns else get_date_col(df)
+
+                if date_col in df.columns:
+                    df = df.sort_values(date_col, ascending=False)
+
+                    # === 1. 定义显示顺序 (Total -> East -> Midwest -> SouthCentral) ===
+                    # 严格按照您的要求排序
+                    regions_order = [
+                        ("Total", "Total 48"),
+                        ("East", "East"),
+                        ("Midwest", "Midwest"),
+                        ("SouthCentral", "S.Central")
+                    ]
+
+                    final_data = {}
+
+                    # === 2. 遍历并计算 6 个指标 ===
+                    for prefix, display_name in regions_order:
+                        col_stock = f"{prefix}_Stock"
+                        col_net = f"{prefix}_Net_Change"
+                        col_y_ago = f"{prefix}_Year_Ago"
+                        col_5_avg = f"{prefix}_5Yr_Avg"
+
+                        if col_stock not in df.columns: continue
+
+                        # 1. Stock
+                        final_data[(display_name, "Stock")] = df[col_stock]
+
+                        # 2. Net Chg
+                        if col_net in df.columns:
+                            final_data[(display_name, "Net Chg")] = df[col_net]
+
+                        # 3. Year Ago
+                        if col_y_ago in df.columns:
+                            final_data[(display_name, "Year Ago")] = df[col_y_ago]
+                            # 4. vs Year %
+                            final_data[(display_name, "vs Year %")] = ((df[col_stock] - df[col_y_ago]) / df[
+                                col_y_ago]) * 100
+
+                        # 5. 5-Yr Avg
+                        if col_5_avg in df.columns:
+                            final_data[(display_name, "5-Yr Avg")] = df[col_5_avg]
+                            # 6. vs 5Yr %
+                            final_data[(display_name, "vs 5Yr %")] = ((df[col_stock] - df[col_5_avg]) / df[
+                                col_5_avg]) * 100
+
+                    # === 3. 构建 DataFrame ===
+                    view_df = pd.DataFrame(final_data)
+                    try:
+                        view_df.index = pd.to_datetime(df[date_col]).dt.strftime('%Y-%m-%d')
+                    except:
+                        view_df.index = df[date_col]
+                    view_df.index.name = "Report Date"
+
+
+                    # === 4. 样式逻辑 (复刻截图) ===
+                    # 颜色：负绿正红
+                    def style_color(v):
+                        if pd.isna(v): return ''
+                        if v < 0: return 'color: #2e7d32; font-weight: bold;'
+                        if v > 0: return 'color: #c62828; font-weight: bold;'
+                        return 'color: black;'
+
+
+                    # 背景：浅黄
+                    def style_bg(v):
+                        return 'background-color: #fff3cd;'
+
+
+                    styler = view_df.style
+                    all_cols = view_df.columns
+
+                    # 格式化: 整数
+                    int_cols = [c for c in all_cols if c[1] in ["Stock", "Year Ago", "5-Yr Avg"]]
+                    styler = styler.format("{:,.0f}", subset=int_cols)
+
+                    # 格式化: 带符号整数
+                    net_cols = [c for c in all_cols if c[1] == "Net Chg"]
+                    styler = styler.format("{:+.0f}", subset=net_cols)
+
+                    # 格式化: 百分比
+                    pct_cols = [c for c in all_cols if "%" in c[1]]
+                    styler = styler.format("{:+.1f}", subset=pct_cols)
+
+                    # 应用样式 (只给 Net 和 % 上色和背景)
+                    target_cols = net_cols + pct_cols
+                    styler = styler.applymap(style_color, subset=target_cols)
+                    styler = styler.applymap(style_bg, subset=target_cols)
+
+                    styler = styler.set_properties(**{'text-align': 'center'})
+
+                    st.dataframe(styler, width='stretch', height=600)
+
+                else:
+                    st.warning("数据异常：缺失 Report_Date")
+            except Exception as e:
+                st.error(f"Error: {e}")
+        else:
+            st.info("暂无数据")
