@@ -1,5 +1,5 @@
 import streamlit as st
-from datetime import datetime
+from datetime import datetime, timedelta
 import requests
 import io
 import re
@@ -52,7 +52,7 @@ st.markdown("""
         padding: 4px 12px; border-radius: 6px; font-weight: 700; font-size: 1.1em;
         border: 1px solid #c8e6c9; display: inline-block; margin: 4px 0;
     }
-    
+
         .tag-bear {
         background-color: #ffebee; 
         color: #c62828;               /* 红色：暖冬/利空 */
@@ -145,24 +145,21 @@ def signal_card(title, dynamics, impact, signal_text):
     st.markdown(html, unsafe_allow_html=True)
 
 
-# === [新增] 提取本地历史数据最新行 (供 NCRI 和 Tab 展示使用) ===
+# === [保留] 提取本地历史数据最新行 (供 NCRI 和 Tab 展示使用) ===
 def load_latest_climate_data():
     """从本地 CSV 文件读取最新一行的 AO/NAO/PNA 数据。"""
     HISTORY_FILE = "history_weather.csv"
     try:
         if not os.path.exists(HISTORY_FILE):
             return None
-
         df = pd.read_csv(HISTORY_FILE)
-
         # 返回 DataFrame 的最后一行（即最新的数据）
         return df.iloc[-1].to_dict()
-
     except Exception as e:
         return None
 
 
-# === [新增/修正] 辅助函数 - 显示当前气象指标的值 (供 Tab 使用) ===
+# === [保留] 辅助函数 - 显示当前气象指标的值 (供 Tab 使用) ===
 def display_current_index_value(index_name):
     global latest_data
 
@@ -177,32 +174,26 @@ def display_current_index_value(index_name):
 
         def get_style(value):
             if value is None: return "color: #888;", "-"
-
             is_positive = value > 0
-
             # AO/NAO: 负值是利多 (Green)
             if is_nao_ao:
                 is_bullish = not is_positive
-                # PNA: 正值是利多 (Green)
+            # PNA: 正值是利多 (Green)
             else:
                 is_bullish = is_positive
-
             color = "#2e7d32" if is_bullish else "#c62828"  # Green or Red
             arrow = "▲" if is_bullish else "▼"
-
             return f"color: {color};", arrow
 
         obs_style, obs_arrow = get_style(obs_val)
         d7_style, d7_arrow = get_style(d7_val)
         d10_style, d10_arrow = get_style(d10_val)
 
-
         col1, col2, col3 = st.columns(3)
 
         # 1. 今日观测
         with col1:
             st.markdown(f"**今日实况 (Observed):**")
-            # [修正] 确保箭头在 span 内，统一颜色
             st.markdown(
                 f"<span style='font-size: 1.8em; font-weight: bold; {obs_style}'>{obs_arrow} {obs_val:.3f}</span>",
                 unsafe_allow_html=True)
@@ -225,43 +216,50 @@ def display_current_index_value(index_name):
         st.warning("⚠️ 数据库尚未更新，请运行 'climate_collector.py' 获取数据。")
 
 
-# === HDD 数据抓取函数 (NOAA) ===
-@st.cache(ttl=3600, suppress_st_warning=True)
+# === HDD 数据抓取函数 (改为读取 CSV) ===
+# [修改说明] 恢复使用 @st.cache 以兼容旧版本
+@st.cache(ttl=60, suppress_st_warning=True)
 def get_gas_hdd():
-    url = "https://www.cpc.ncep.noaa.gov/products/analysis_monitoring/cdus/degree_days/wsahddy.txt"
+    csv_file = "history_hdd.csv"
     try:
-        response = requests.get(url, timeout=10)
-        if response.status_code != 200: return None
-        lines = response.text.split('\n')
-        data_bag = {}
-        in_gas_section = False
-        targets = {
-            "NEW ENGLAND": "New England",
-            "MIDDLE ATLANTIC": "Middle Atlantic",
-            "E N CENTRAL": "Midwest",
-            "UNITED STATES": "US Total"
+        if not os.path.exists(csv_file):
+            return None
+
+        df = pd.read_csv(csv_file)
+        if df.empty: return None
+
+        # 取最新一行
+        latest = df.iloc[-1]
+
+        data_bag = {
+            "New England": {
+                "actual": latest.get("NE_Actual", 0),
+                "dev_normal": latest.get("NE_Dev_Norm", 0),
+                "dev_last_year": latest.get("NE_Dev_Year", 0)
+            },
+            "Middle Atlantic": {
+                "actual": latest.get("MA_Actual", 0),
+                "dev_normal": latest.get("MA_Dev_Norm", 0),
+                "dev_last_year": latest.get("MA_Dev_Year", 0)
+            },
+            "Midwest": {
+                "actual": latest.get("MW_Actual", 0),
+                "dev_normal": latest.get("MW_Dev_Norm", 0),
+                "dev_last_year": latest.get("MW_Dev_Year", 0)
+            },
+            "US Total": {
+                "actual": latest.get("US_Actual", 0),
+                "dev_normal": latest.get("US_Dev_Norm", 0),
+                "dev_last_year": latest.get("US_Dev_Year", 0)
+            }
         }
-        for line in lines:
-            if "GAS HOME HEATING CUSTOMER WEIGHTED" in line:
-                in_gas_section = True
-                continue
-            if in_gas_section:
-                for keyword, clean_name in targets.items():
-                    if keyword in line:
-                        numbers = re.findall(r'-?\d+', line)
-                        if len(numbers) >= 3:
-                            data_bag[clean_name] = {
-                                "actual": int(numbers[0]),
-                                "dev_normal": int(numbers[1]),
-                                "dev_last_year": int(numbers[2])
-                            }
-                if len(data_bag) == 4: break
         return data_bag
     except Exception as e:
         return None
 
 
-# === ENSO 报告解析 ===
+# === ENSO 报告解析 (保持爬虫) ===
+# [修改说明] 恢复使用 @st.cache
 @st.cache(ttl=3600, suppress_st_warning=True)
 def get_enso_summary(url):
     try:
@@ -300,54 +298,93 @@ def get_enso_summary(url):
     return {"status": "Error", "body": []}
 
 
-# === EIA 数据解析 ===
-@st.cache(ttl=3600, suppress_st_warning=True)
+# === EIA 数据解析 (改为读取 CSV) ===
+# [修改说明] 恢复使用 @st.cache
+@st.cache(ttl=60, suppress_st_warning=True)
 def load_eia_total():
-    url = "https://ir.eia.gov/ngs/wngsr.json"
+    csv_file = "history_storage.csv"
     try:
-        resp = requests.get(url, timeout=15)
-        raw = resp.content.decode("utf-8-sig")
-        obj = json.loads(raw)
-        current_week = obj.get("current_week")
-        week_ago = obj.get("week_ago")
-        year_ago = obj.get("year_ago")
+        if not os.path.exists(csv_file):
+            return None
 
-        def fmt_date(d):
-            try:
-                return datetime.strptime(d, "%Y-%m-%d").strftime("%m/%d/%y")
-            except:
-                return d
+        df_csv = pd.read_csv(csv_file)
+        if df_csv.empty: return None
 
-        labels = [fmt_date(current_week), fmt_date(week_ago), "Net change (Bcf)",
-                  f"Year ago {fmt_date(year_ago)} (Bcf)", "Year-ago % change",
+        # 取最新一行
+        latest = df_csv.iloc[-1]
+
+        # 1. 恢复列名格式 (日期)
+        report_date_str = latest.get("Report_Date", "")
+
+        try:
+            current_date_obj = datetime.strptime(report_date_str, "%Y-%m-%d")
+            week_ago_obj = current_date_obj - timedelta(days=7)
+            curr_fmt = current_date_obj.strftime("%m/%d/%y")
+            prev_fmt = week_ago_obj.strftime("%m/%d/%y")
+        except:
+            curr_fmt = "Current"
+            prev_fmt = "Prev Week"
+
+        # 2. 构造列名列表
+        labels = [curr_fmt, prev_fmt, "Net change (Bcf)",
+                  "Year ago (Bcf)", "Year-ago % change",
                   "5-yr avg (Bcf)", "5-yr % change"]
 
-        def extract_region(prefix, display_name):
-            target = next((s for s in obj.get("series", []) if str(s.get("name", "")).lower().startswith(prefix)), None)
-            if not target: return None
-            data_map = {d[0]: d[1] for d in target.get("data", [])}
-            calc = target.get("calculated", {})
-            return {
-                "Region": display_name,
-                labels[0]: data_map.get(current_week),
-                labels[1]: data_map.get(week_ago),
-                labels[2]: calc.get("net_change"),
-                labels[3]: data_map.get(year_ago),
-                labels[4]: calc.get("pct-change_yrago"),
-                labels[5]: calc.get("5yr-avg"),
-                labels[6]: calc.get("pct-chg_5yr-avg"),
-            }
+        # 3. 辅助计算函数
+        def calc_pct(curr, base):
+            try:
+                if base is None or base == 0: return None
+                return ((curr - base) / base) * 100
+            except:
+                return None
 
         rows = []
-        r1 = extract_region("total lower 48", "Total")
-        if r1: rows.append(r1)
-        r2 = extract_region("east", "East")
-        if r2: rows.append(r2)
-        if not rows: return None
-        df = pd.DataFrame(rows).set_index("Region")
-        for col in df.columns: df[col] = pd.to_numeric(df[col], errors="coerce")
-        return df
-    except:
+
+        # --- Total Lower 48 ---
+        t_stock = latest.get("Total_Stock")
+        t_net = latest.get("Total_Net_Change")
+        t_yr = latest.get("Total_Year_Ago")
+        t_avg = latest.get("Total_5Yr_Avg")
+
+        t_prev = t_stock - t_net if (t_stock is not None and t_net is not None) else None
+
+        r1 = {
+            "Region": "Total",
+            labels[0]: t_stock,
+            labels[1]: t_prev,
+            labels[2]: t_net,
+            labels[3]: t_yr,
+            labels[4]: calc_pct(t_stock, t_yr),
+            labels[5]: t_avg,
+            labels[6]: calc_pct(t_stock, t_avg)
+        }
+        rows.append(r1)
+
+        # --- East ---
+        e_stock = latest.get("East_Stock")
+        e_net = latest.get("East_Net_Change")
+        e_yr = latest.get("East_Year_Ago")
+        e_avg = latest.get("East_5Yr_Avg")
+
+        e_prev = e_stock - e_net if (e_stock is not None and e_net is not None) else None
+
+        r2 = {
+            "Region": "East",
+            labels[0]: e_stock,
+            labels[1]: e_prev,
+            labels[2]: e_net,
+            labels[3]: e_yr,
+            labels[4]: calc_pct(e_stock, e_yr),
+            labels[5]: e_avg,
+            labels[6]: calc_pct(e_stock, e_avg)
+        }
+        rows.append(r2)
+
+        df_display = pd.DataFrame(rows).set_index("Region")
+
+        return df_display
+
+    except Exception as e:
         return None
 
 
@@ -503,7 +540,6 @@ def display_current_index_value(index_name):
         obs_style, obs_arrow = get_style(obs_val)
         d7_style, d7_arrow = get_style(d7_val)
         d10_style, d10_arrow = get_style(d10_val)
-
 
         # [修改] 布局从 st.markdown 迁移到自定义 HTML 卡片
         html_card = f"""
