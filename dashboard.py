@@ -20,9 +20,17 @@ st.set_page_config(
 # === [配置] 自动刷新 (1小时) ===
 st_autorefresh(interval=3600000, key="data_refresh_key")
 
-# === 2. 样式优化 (CSS) ===
+# === 2. 样式优化 (CSS) - 已修改以缩小顶部空间 ===
 st.markdown("""
     <style>
+    /* [新增] 强行缩小主页面顶部空白 */
+    .block-container {
+        padding-top: 1.5rem !important; /* 默认通常是 6rem，这里改为 1.5rem */
+        padding-bottom: 1rem !important;
+        margin-top: 0rem !important;
+    }
+
+    /* 侧边栏背景 */
     [data-testid="stSidebar"] { background-color: #f8f9fa; }
 
     /* 侧边栏顶部紧凑模式 */
@@ -96,6 +104,7 @@ st.markdown("""
     .zoom-img:hover { opacity: 0.9; cursor: zoom-in; transition: 0.3s; }
     </style>
 """, unsafe_allow_html=True)
+
 
 # === 3. 核心数据源 ===
 IMG_URLS = {
@@ -410,7 +419,7 @@ with st.sidebar:
         show_dual_metric(hd_col1, "Midwest", hdd_data.get('Midwest', {}))
         show_dual_metric(hd_col2, "US Total", hdd_data.get('US Total', {}))
 
-        st.caption(f"📅 Source Updated: {hdd_date}")
+        st.caption(f"📅 Source Updated: {hdd_date} ")
         st.caption("[NOAA HDD Data](https://www.cpc.ncep.noaa.gov/products/analysis_monitoring/cdus/degree_days/)")
 
     else:
