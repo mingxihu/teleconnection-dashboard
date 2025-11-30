@@ -1,56 +1,50 @@
-name: Daily Climate Data Update
+name: Daily Climate & HDD Data Update
 
-# 1. 触发机制：什么得候运行？
 on:
   schedule:
-    # 每天 UTC 时间 14:00 运行 (相当于美东时间早晨 9:00 或 10:00)
-    # 这是数据通常发布的时间
+    # 每天 UTC 14:00 (美东早上 9:00) 运行
     - cron: '0 14 * * *'
-  workflow_dispatch: # 允许您在 GitHub 网页上手动点击按钮运行 (方便测试)
+  workflow_dispatch: # 允许手动运行
 
-# 2. 权限设置：允许机器人修改仓库
 permissions:
   contents: write
 
-# 3. 任务流程
 jobs:
   update-data:
-    runs-on: ubuntu-latest # 使用最新的 Linux 服务器
+    runs-on: ubuntu-latest
 
     steps:
-      # 第一步：把代码拉取到机器人电脑上
       - name: Checkout repository
         uses: actions/checkout@v3
 
-      # 第二步：安装 Python 环境
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
           python-version: '3.9'
 
-      # 第三步：安装依赖库 (pandas, requests)
       - name: Install dependencies
         run: |
           pip install pandas requests
 
-      # 第四步：运行您的收集器脚本
-      # ⚠️ 注意：这里的文件名必须和您实际的文件名一致！
-      # 如果您存的是 data_collector.py，请改一下这里
-      - name: Run Climate Collector
+      # === 任务 1: 运行气象收集器 ===
+      - name: Run Climate Collector (AO/NAO/PNA)
         run: python climate_collector.py
 
-      # 第五步：检查是否有数据更新，并推送到仓库
+      # === 任务 2: 运行 HDD 收集器 (新增) ===
+      - name: Run HDD Collector
+        run: python hdd_collector.py
+
+      # === 任务 3: 提交并保存所有 CSV ===
       - name: Commit and Push changes
         run: |
-          # 配置机器人的身份
           git config --global user.name "GitHub Actions Bot"
           git config --global user.email "actions@github.com"
           
-          # 添加所有变动 (主要是 history_weather.csv)
-          git add history_weather.csv
+          # 只要是名字叫 history_ 开头的 CSV 文件，都加入暂存区
+          git add history_*.csv
           
-          # 尝试提交。如果没有新数据(文件没变)，这一步会跳过，不会报错
-          git commit -m "Auto-update: Daily climate data fetch" || echo "No changes to commit"
+          # 提交更新
+          git commit -m "Auto-update: Climate & HDD Data" || echo "No changes to commit"
           
           # 推送回仓库
           git push
