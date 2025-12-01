@@ -34,24 +34,24 @@ jobs:
       - name: Run HDD Collector
         run: python hdd_collector.py
 
-      # === 任务 3: 库存数据 (就是这里！之前可能没保存上) ===
+      # === 任务 3: 库存数据 ===
       - name: Run Storage Collector
         run: python storage_collector.py
 
-# === 任务 4: 提交保存 (修复版：先拉后推) ===
+      # === 任务 4: 提交保存 (已修复冲突问题) ===
       - name: Commit and Push changes
         run: |
           git config --global user.name "GitHub Actions Bot"
           git config --global user.email "actions@github.com"
           
-          # 1. 暂存数据文件
+          # 1. 暂存所有数据文件
           git add history_*.csv
           
-          # 2. 提交到本地暂存区 (如果没有变化则不报错)
+          # 2. 提交到本地 (如果无变化则忽略)
           git commit -m "Auto-update: Climate, HDD & Storage Data" || echo "No changes to commit"
           
-          # 3. [关键修复] 先把云端最新的代码(比如你的dashboard更新)拉下来合并
+          # 3. 【关键修复】先拉取云端最新代码 (防止和您的 Dashboard 更新撞车)
           git pull --rebase origin main
           
-          # 4. 再推送到云端
+          # 4. 推送
           git push
