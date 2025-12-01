@@ -38,15 +38,20 @@ jobs:
       - name: Run Storage Collector
         run: python storage_collector.py
 
-      # === 任务 4: 提交保存 ===
+      # === 任务 4: 提交保存 (修复版：先拉后推) ===
       - name: Commit and Push changes
         run: |
           git config --global user.name "GitHub Actions Bot"
           git config --global user.email "actions@github.com"
           
-          # 确保添加所有 history 开头的 CSV
+          # 1. 暂存数据文件
           git add history_*.csv
           
+          # 2. 提交到本地暂存区
           git commit -m "Auto-update: Climate, HDD & Storage Data" || echo "No changes to commit"
           
+          # 3. [关键修复] 拉取远程最新代码 (如有冲突则合并)
+          git pull --rebase origin main
+          
+          # 4. 推送
           git push

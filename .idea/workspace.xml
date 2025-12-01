@@ -5,8 +5,7 @@
   </component>
   <component name="ChangeListManager">
     <list default="true" id="f6cb9b48-7aba-4f98-beff-df41fffe23aa" name="Changes" comment="">
-      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/dashboard.py" beforeDir="false" afterPath="$PROJECT_DIR$/dashboard.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.github/workflows/daily_update.yml" beforeDir="false" afterPath="$PROJECT_DIR$/.github/workflows/daily_update.yml" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -101,7 +100,7 @@
       <updated>1764537266966</updated>
       <workItem from="1764537268125" duration="24000" />
       <workItem from="1764537440983" duration="5101000" />
-      <workItem from="1764606063906" duration="295000" />
+      <workItem from="1764606063906" duration="567000" />
     </task>
     <servers />
   </component>
