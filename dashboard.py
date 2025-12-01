@@ -671,27 +671,23 @@ else:
     # 📅 历史数据回溯分析模式 (History)
     # ==========================================
     st.title("📅 历史数据库 (Historical Data Archive)")
+    st.caption("全维度历史数据复盘 | Run Date = 脚本运行日 | Source Date = 官方数据日")
 
     tab_hist_weather, tab_hist_hdd, tab_hist_eia = st.tabs(["☁️ 气象 (Weather)", "🔥 需求 (HDD)", "🏦 库存 (EIA)"])
-
 
     # === 辅助函数：格式化日期列 ===
     def format_date_cols(df):
         for col in ["Run_Date", "Source_Date", "Report_Date", "Date"]:
             if col in df.columns:
-                try:
-                    df[col] = pd.to_datetime(df[col]).dt.strftime('%Y-%m-%d')
-                except:
-                    pass
+                try: df[col] = pd.to_datetime(df[col]).dt.strftime('%Y-%m-%d')
+                except: pass
         return df
-
 
     # === 辅助函数：查找日期列 ===
     def get_date_col(df):
         for col in ["Report_Date", "Run_Date", "Date", "date", "Timestamp"]:
             if col in df.columns: return col
         return None
-
 
     # --- 1. 气象历史 (保持三塔布局) ---
     with tab_hist_weather:
@@ -706,16 +702,15 @@ else:
                     df = df.set_index(date_col)
                     df.index.name = "Run Date"
 
-
                     def get_cols(prefix):
                         target = [f"{prefix}_Obs", f"{prefix}_Day7", f"{prefix}_Day10"]
                         rename_map = {f"{prefix}_Obs": "Obs", f"{prefix}_Day7": "Day 7", f"{prefix}_Day10": "Day 10"}
                         available = [c for c in target if c in df.columns]
                         return df[available].rename(columns=rename_map)
 
-
-                    df_ao, df_nao, df_pna = get_cols("AO"), get_cols("NAO"), get_cols("PNA")
-
+                    df_ao = get_cols("AO")
+                    df_nao = get_cols("NAO")
+                    df_pna = get_cols("PNA")
 
                     def style_ao_nao(val):
                         if pd.isna(val): return ''
@@ -723,35 +718,24 @@ else:
                         if val > 0: return 'color: #c62828; background-color: #ffebee'
                         return ''
 
-
                     def style_pna(val):
                         if pd.isna(val): return ''
                         if val > 0: return 'color: #2e7d32; background-color: #e8f5e9; font-weight: bold'
                         if val < 0: return 'color: #c62828; background-color: #ffebee'
                         return ''
 
-
                     c1, c2, c3 = st.columns([1.3, 1, 1])
-                    with c1:
-                        st.markdown("##### AO"); st.dataframe(df_ao.style.format("{:.2f}").applymap(style_ao_nao),
-                                                                 width='stretch', height=500)
-                    with c2:
-                        st.markdown("##### NAO"); st.dataframe(df_nao.style.format("{:.2f}").applymap(style_ao_nao),
-                                                                 width='stretch', hide_index=True, height=500)
-                    with c3:
-                        st.markdown("##### PNA"); st.dataframe(df_pna.style.format("{:.2f}").applymap(style_pna),
-                                                                  width='stretch', hide_index=True, height=500)
-                else:
-                    st.warning("数据异常")
-            except:
-                st.info("暂无数据")
-        else:
-            st.info("暂无数据")
+                    with c1: st.markdown("##### AO"); st.dataframe(df_ao.style.format("{:.2f}").applymap(style_ao_nao), width='stretch', height=500)
+                    with c2: st.markdown("##### NAO"); st.dataframe(df_nao.style.format("{:.2f}").applymap(style_ao_nao), width='stretch', hide_index=True, height=500)
+                    with c3: st.markdown("##### PNA"); st.dataframe(df_pna.style.format("{:.2f}").applymap(style_pna), width='stretch', hide_index=True, height=500)
+                else: st.warning("数据异常")
+            except: st.info("暂无数据")
+        else: st.info("暂无数据")
 
     # --- 2. HDD 历史 (美东补全 Act/Dev/YoY) ---
     with tab_hist_hdd:
         st.markdown("### 🔥 区域需求全览 (HDD)")
-        st.caption("Act:实际 | Dev:距平 | YoY:同比")
+        st.caption("Act:实际 | Dev:距平 | YoY:同比 (Run Date = 脚本获取日)")
 
         if os.path.exists("history_hdd.csv"):
             try:
@@ -760,8 +744,7 @@ else:
                     df = df.sort_values("Run_Date", ascending=False)
                     df = format_date_cols(df)
 
-                # (A) 美东 (East) - 最全数据
-                # 构造目标列
+                # (A) 美东 (East) - 最全数据 (含 Run Date)
                 rename_east = {
                     "Run_Date": "Run Date", "Source_Date": "Source",
                     "NE_Actual": "NE Act", "NE_Dev_Norm": "NE Dev", "NE_Dev_Year": "NE YoY",
@@ -773,14 +756,12 @@ else:
                 if "Run Date" in df_east.columns: df_east = df_east.set_index("Run Date")
 
                 # (B) 中西部
-                df_mw = df[["MW_Actual", "MW_Dev_Norm", "MW_Dev_Year"]].rename(
-                    columns={"MW_Actual": "Act", "MW_Dev_Norm": "Dev", "MW_Dev_Year": "YoY"})
+                df_mw = df[["MW_Actual", "MW_Dev_Norm", "MW_Dev_Year"]].rename(columns={"MW_Actual": "Act", "MW_Dev_Norm": "Dev", "MW_Dev_Year": "YoY"})
 
                 # (C) 全美
-                df_us = df[["US_Actual", "US_Dev_Norm", "US_Dev_Year"]].rename(
-                    columns={"US_Actual": "Act", "US_Dev_Norm": "Dev", "US_Dev_Year": "YoY"})
+                df_us = df[["US_Actual", "US_Dev_Norm", "US_Dev_Year"]].rename(columns={"US_Actual": "Act", "US_Dev_Norm": "Dev", "US_Dev_Year": "YoY"})
 
-
+                # 样式
                 def style_hdd(val):
                     if pd.isna(val): return ''
                     if isinstance(val, (int, float)):
@@ -788,31 +769,52 @@ else:
                         if val < 0: return 'color: #c62828; font-weight: bold; background-color: #ffebee'
                     return ''
 
+                # 背景色高亮 (与库存保持一致)
+                def style_bg_hdd(v):
+                    return 'background-color: #fff3cd;'
 
+                # 布局
                 c1, c2, c3 = st.columns([2.3, 1, 1])
+
                 with c1:
                     st.markdown("**🏙 美东 (East)**")
-                    # 找出数字列进行格式化
-                    num_cols = [c for c in df_east.columns if "Act" in c or "Dev" in c or "YoY" in c]
+                    # 找出所有 Dev/YoY 列上色
                     color_cols = [c for c in df_east.columns if "Dev" in c or "YoY" in c]
-                    st.dataframe(df_east.style.format("{:.0f}", subset=num_cols).applymap(style_hdd, subset=color_cols),
-                                 width='stretch')
+                    # 找出所有数值列格式化 (排除日期列)
+                    num_cols = [c for c in df_east.columns if "Act" in c or "Dev" in c or "YoY" in c]
+
+                    st.dataframe(
+                        df_east.style
+                        .format("{:.0f}", subset=num_cols)
+                        .applymap(style_hdd, subset=color_cols)
+                        .applymap(style_bg_hdd, subset=color_cols), # 加浅黄背景
+                        width='stretch'
+                    )
                 with c2:
                     st.markdown("**🏭 中西部 (Midwest)**")
-                    st.dataframe(df_mw.style.format("{:.0f}").applymap(style_hdd, subset=["Dev", "YoY"]),
-                                 width='stretch', hide_index=True)
+                    st.dataframe(
+                        df_mw.style
+                        .format("{:.0f}")
+                        .applymap(style_hdd, subset=["Dev", "YoY"])
+                        .applymap(style_bg_hdd, subset=["Dev", "YoY"]),
+                        width='stretch', hide_index=True
+                    )
                 with c3:
                     st.markdown("**🇺🇸 全美 (US Total)**")
-                    st.dataframe(df_us.style.format("{:.0f}").applymap(style_hdd, subset=["Dev", "YoY"]),
-                                 width='stretch', hide_index=True)
-            except Exception as e:
-                st.error(f"Error: {e}")
-        else:
-            st.info("暂无数据")
+                    st.dataframe(
+                        df_us.style
+                        .format("{:.0f}")
+                        .applymap(style_hdd, subset=["Dev", "YoY"])
+                        .applymap(style_bg_hdd, subset=["Dev", "YoY"]),
+                        width='stretch', hide_index=True
+                    )
+            except Exception as e: st.error(f"Error: {e}")
+        else: st.info("暂无数据")
 
-    # --- 3. EIA 历史 (恢复 6列×4区 全维度布局) ---
+    # --- 3. EIA 历史 (完美复刻版：多级表头 + 浅黄高亮) ---
     with tab_hist_eia:
         st.markdown("### 🏦 库存全景 (Detailed Storage Report)")
+        st.caption("全维度历史数据：包含库存总量、净变化、同比及五年均值对比。")
 
         if os.path.exists("history_storage.csv"):
             try:
@@ -823,7 +825,6 @@ else:
                     df = df.sort_values(date_col, ascending=False)
 
                     # === 1. 定义显示顺序 (Total -> East -> Midwest -> SouthCentral) ===
-                    # 严格按照您的要求排序
                     regions_order = [
                         ("Total", "Total 48"),
                         ("East", "East"),
@@ -836,7 +837,7 @@ else:
                     # === 2. 遍历并计算 6 个指标 ===
                     for prefix, display_name in regions_order:
                         col_stock = f"{prefix}_Stock"
-                        col_net = f"{prefix}_Net_Change"
+                        col_net   = f"{prefix}_Net_Change"
                         col_y_ago = f"{prefix}_Year_Ago"
                         col_5_avg = f"{prefix}_5Yr_Avg"
 
@@ -853,24 +854,19 @@ else:
                         if col_y_ago in df.columns:
                             final_data[(display_name, "Year Ago")] = df[col_y_ago]
                             # 4. vs Year %
-                            final_data[(display_name, "vs Year %")] = ((df[col_stock] - df[col_y_ago]) / df[
-                                col_y_ago]) * 100
+                            final_data[(display_name, "vs Year %")] = ((df[col_stock] - df[col_y_ago]) / df[col_y_ago]) * 100
 
                         # 5. 5-Yr Avg
                         if col_5_avg in df.columns:
                             final_data[(display_name, "5-Yr Avg")] = df[col_5_avg]
                             # 6. vs 5Yr %
-                            final_data[(display_name, "vs 5Yr %")] = ((df[col_stock] - df[col_5_avg]) / df[
-                                col_5_avg]) * 100
+                            final_data[(display_name, "vs 5Yr %")] = ((df[col_stock] - df[col_5_avg]) / df[col_5_avg]) * 100
 
                     # === 3. 构建 DataFrame ===
                     view_df = pd.DataFrame(final_data)
-                    try:
-                        view_df.index = pd.to_datetime(df[date_col]).dt.strftime('%Y-%m-%d')
-                    except:
-                        view_df.index = df[date_col]
+                    try: view_df.index = pd.to_datetime(df[date_col]).dt.strftime('%Y-%m-%d')
+                    except: view_df.index = df[date_col]
                     view_df.index.name = "Report Date"
-
 
                     # === 4. 样式逻辑 (复刻截图) ===
                     # 颜色：负绿正红
@@ -880,11 +876,9 @@ else:
                         if v > 0: return 'color: #c62828; font-weight: bold;'
                         return 'color: black;'
 
-
                     # 背景：浅黄
                     def style_bg(v):
                         return 'background-color: #fff3cd;'
-
 
                     styler = view_df.style
                     all_cols = view_df.columns
