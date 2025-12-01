@@ -671,7 +671,6 @@ else:
     # 📅 历史数据回溯分析模式 (History)
     # ==========================================
     st.title("📅 历史数据库 (Historical Data Archive)")
-    st.caption("全维度历史数据复盘 | Run Date = 脚本运行日 | Source Date = 官方数据日")
 
     tab_hist_weather, tab_hist_hdd, tab_hist_eia = st.tabs(["☁️ 气象 (Weather)", "🔥 需求 (HDD)", "🏦 库存 (EIA)"])
 
@@ -811,102 +810,108 @@ else:
             except Exception as e: st.error(f"Error: {e}")
         else: st.info("暂无数据")
 
-    # --- 3. EIA 历史 (完美复刻版：多级表头 + 浅黄高亮) ---
-    with tab_hist_eia:
-        st.markdown("### 🏦 库存全景 (Detailed Storage Report)")
-        st.caption("全维度历史数据：包含库存总量、净变化、同比及五年均值对比。")
+        # --- 3. EIA 历史 (最终版：去重 + 全维度 + 复刻样式) ---
+        with tab_hist_eia:
+            st.markdown("### 🏦 库存全景 (Detailed Storage Report)")
 
-        if os.path.exists("history_storage.csv"):
-            try:
-                df = pd.read_csv("history_storage.csv")
-                date_col = "Report_Date" if "Report_Date" in df.columns else get_date_col(df)
+            if os.path.exists("history_storage.csv"):
+                try:
+                    df = pd.read_csv("history_storage.csv")
+                    # 优先使用 Report_Date
+                    date_col = "Report_Date" if "Report_Date" in df.columns else get_date_col(df)
 
-                if date_col in df.columns:
-                    df = df.sort_values(date_col, ascending=False)
+                    if date_col in df.columns:
+                        # 1. 先按运行日期倒序 (确保最新抓取的在最上面)
+                        if "Run_Date" in df.columns:
+                            df = df.sort_values("Run_Date", ascending=False)
 
-                    # === 1. 定义显示顺序 (Total -> East -> Midwest -> SouthCentral) ===
-                    regions_order = [
-                        ("Total", "Total 48"),
-                        ("East", "East"),
-                        ("Midwest", "Midwest"),
-                        ("SouthCentral", "S.Central")
-                    ]
+                        # 2. [关键修复] 去重！解决 "non-unique index" 报错
+                        # 只保留每个 Report_Date 的最新一条记录
+                        df = df.drop_duplicates(subset=[date_col], keep='first')
 
-                    final_data = {}
+                        # 3. 定义显示顺序 (Total -> East -> Midwest -> SouthCentral)
+                        regions_order = [
+                            ("Total", "Total 48"),
+                            ("East", "East"),
+                            ("Midwest", "Midwest"),
+                            ("SouthCentral", "S.Central")
+                        ]
 
-                    # === 2. 遍历并计算 6 个指标 ===
-                    for prefix, display_name in regions_order:
-                        col_stock = f"{prefix}_Stock"
-                        col_net   = f"{prefix}_Net_Change"
-                        col_y_ago = f"{prefix}_Year_Ago"
-                        col_5_avg = f"{prefix}_5Yr_Avg"
+                        final_data = {}
 
-                        if col_stock not in df.columns: continue
+                        # 4. 遍历并计算 6 个指标
+                        for prefix, display_name in regions_order:
+                            col_stock = f"{prefix}_Stock"
+                            col_net = f"{prefix}_Net_Change"
+                            col_y_ago = f"{prefix}_Year_Ago"
+                            col_5_avg = f"{prefix}_5Yr_Avg"
 
-                        # 1. Stock
-                        final_data[(display_name, "Stock")] = df[col_stock]
+                            if col_stock not in df.columns: continue
 
-                        # 2. Net Chg
-                        if col_net in df.columns:
-                            final_data[(display_name, "Net Chg")] = df[col_net]
+                            # Stock
+                            final_data[(display_name, "Stock")] = df[col_stock]
 
-                        # 3. Year Ago
-                        if col_y_ago in df.columns:
-                            final_data[(display_name, "Year Ago")] = df[col_y_ago]
-                            # 4. vs Year %
-                            final_data[(display_name, "vs Year %")] = ((df[col_stock] - df[col_y_ago]) / df[col_y_ago]) * 100
+                            # Net Chg
+                            if col_net in df.columns:
+                                final_data[(display_name, "Net Chg")] = df[col_net]
 
-                        # 5. 5-Yr Avg
-                        if col_5_avg in df.columns:
-                            final_data[(display_name, "5-Yr Avg")] = df[col_5_avg]
-                            # 6. vs 5Yr %
-                            final_data[(display_name, "vs 5Yr %")] = ((df[col_stock] - df[col_5_avg]) / df[col_5_avg]) * 100
+                            # Year Ago & %
+                            if col_y_ago in df.columns:
+                                final_data[(display_name, "Year Ago")] = df[col_y_ago]
+                                final_data[(display_name, "vs Year %")] = ((df[col_stock] - df[col_y_ago]) / df[
+                                    col_y_ago]) * 100
 
-                    # === 3. 构建 DataFrame ===
-                    view_df = pd.DataFrame(final_data)
-                    try: view_df.index = pd.to_datetime(df[date_col]).dt.strftime('%Y-%m-%d')
-                    except: view_df.index = df[date_col]
-                    view_df.index.name = "Report Date"
+                            # 5-Yr Avg & %
+                            if col_5_avg in df.columns:
+                                final_data[(display_name, "5-Yr Avg")] = df[col_5_avg]
+                                final_data[(display_name, "vs 5Yr %")] = ((df[col_stock] - df[col_5_avg]) / df[
+                                    col_5_avg]) * 100
 
-                    # === 4. 样式逻辑 (复刻截图) ===
-                    # 颜色：负绿正红
-                    def style_color(v):
-                        if pd.isna(v): return ''
-                        if v < 0: return 'color: #2e7d32; font-weight: bold;'
-                        if v > 0: return 'color: #c62828; font-weight: bold;'
-                        return 'color: black;'
+                        # 5. 构建 DataFrame
+                        view_df = pd.DataFrame(final_data)
+                        try:
+                            view_df.index = pd.to_datetime(df[date_col]).dt.strftime('%Y-%m-%d')
+                        except:
+                            view_df.index = df[date_col]
+                        view_df.index.name = "Report Date"
 
-                    # 背景：浅黄
-                    def style_bg(v):
-                        return 'background-color: #fff3cd;'
 
-                    styler = view_df.style
-                    all_cols = view_df.columns
+                        # 6. 样式逻辑
+                        def style_color(v):
+                            if pd.isna(v): return ''
+                            if v < 0: return 'color: #2e7d32; font-weight: bold;'  # Green
+                            if v > 0: return 'color: #c62828; font-weight: bold;'  # Red
+                            return 'color: black;'
 
-                    # 格式化: 整数
-                    int_cols = [c for c in all_cols if c[1] in ["Stock", "Year Ago", "5-Yr Avg"]]
-                    styler = styler.format("{:,.0f}", subset=int_cols)
 
-                    # 格式化: 带符号整数
-                    net_cols = [c for c in all_cols if c[1] == "Net Chg"]
-                    styler = styler.format("{:+.0f}", subset=net_cols)
+                        def style_bg(v):
+                            return 'background-color: #fff3cd;'
 
-                    # 格式化: 百分比
-                    pct_cols = [c for c in all_cols if "%" in c[1]]
-                    styler = styler.format("{:+.1f}", subset=pct_cols)
 
-                    # 应用样式 (只给 Net 和 % 上色和背景)
-                    target_cols = net_cols + pct_cols
-                    styler = styler.applymap(style_color, subset=target_cols)
-                    styler = styler.applymap(style_bg, subset=target_cols)
+                        styler = view_df.style
+                        all_cols = view_df.columns
 
-                    styler = styler.set_properties(**{'text-align': 'center'})
+                        # 格式化
+                        int_cols = [c for c in all_cols if c[1] in ["Stock", "Year Ago", "5-Yr Avg"]]
+                        styler = styler.format("{:,.0f}", subset=int_cols)
 
-                    st.dataframe(styler, width='stretch', height=600)
+                        net_cols = [c for c in all_cols if c[1] == "Net Chg"]
+                        styler = styler.format("{:+.0f}", subset=net_cols)
 
-                else:
-                    st.warning("数据异常：缺失 Report_Date")
-            except Exception as e:
-                st.error(f"Error: {e}")
-        else:
-            st.info("暂无数据")
+                        pct_cols = [c for c in all_cols if "%" in c[1]]
+                        styler = styler.format("{:+.1f}", subset=pct_cols)
+
+                        # 应用样式
+                        target_cols = net_cols + pct_cols
+                        styler = styler.applymap(style_color, subset=target_cols)
+                        styler = styler.applymap(style_bg, subset=target_cols)
+                        styler = styler.set_properties(**{'text-align': 'center'})
+
+                        st.dataframe(styler, width='stretch', height=600)
+
+                    else:
+                        st.warning("数据异常：缺失 Report_Date")
+                except Exception as e:
+                    st.error(f"Error: {e}")
+            else:
+                st.info("暂无数据")
